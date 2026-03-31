@@ -14,18 +14,13 @@ import rateLimiter from './middleware/rateLimiter.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { notFound } from './middleware/notFound.js';
 import { errorHandler } from './middleware/errorHandler.js';
-const cors = require("cors"); 
+
 const app = express();
 
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://https://instagram-clone-delta-blue.vercel.app/"
-  ],
+  origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5173'],
   credentials: true
 }));
-
-const app = express();
 
 app.use(helmet());
 app.use(

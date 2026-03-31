@@ -1,18 +1,6 @@
 import dotenv from 'dotenv';
 import http from 'http';
 import { Server } from 'socket.io';
-const express = require("express");
-const cors = require("cors"); 
-const app = express();
-
-app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://https://instagram-clone-delta-blue.vercel.app/"
-  ],
-  credentials: true
-}));
-// ✅ ADD HERE
 
 import app from './app.js';
 import { connectDB } from './config/db.js';
@@ -59,7 +47,8 @@ server.on('error', (error) => {
   console.error('Server failed to start', error);
   process.exit(1);
 });
-const PORT = process.env.PORT || 5000;
+
+start();
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
