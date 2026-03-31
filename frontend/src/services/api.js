@@ -1,8 +1,17 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.DEV
-  ? '/api'
-  : import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const normalizeUrl = (url = '') => url.trim().replace(/\/+$/, '');
+const ensureApiBaseUrl = (url) => {
+  const normalizedUrl = normalizeUrl(url);
+
+  if (!normalizedUrl) {
+    return '/api';
+  }
+
+  return normalizedUrl.endsWith('/api') ? normalizedUrl : `${normalizedUrl}/api`;
+};
+
+const API_URL = import.meta.env.DEV ? '/api' : ensureApiBaseUrl(import.meta.env.VITE_API_URL);
 const PUBLIC_ENDPOINTS = [
   '/auth/login',
   '/auth/signup',
