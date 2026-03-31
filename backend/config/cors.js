@@ -4,19 +4,21 @@ const DEFAULT_ORIGINS = [
   'http://localhost:3001',
 ];
 
+const normalizeOrigin = (origin = '') => origin.trim().replace(/\/+$/, '');
+
 const splitOrigins = (value = '') =>
   value
     .split(',')
-    .map((origin) => origin.trim())
+    .map((origin) => normalizeOrigin(origin))
     .filter(Boolean);
 
 const isAllowedVercelPreview = (origin) => {
-  if (process.env.ALLOW_VERCEL_PREVIEWS !== 'true') {
+  if (process.env.ALLOW_VERCEL_PREVIEWS === 'false') {
     return false;
   }
 
   try {
-    return new URL(origin).hostname.endsWith('.vercel.app');
+    return new URL(normalizeOrigin(origin)).hostname.endsWith('.vercel.app');
   } catch (_error) {
     return false;
   }
@@ -31,8 +33,15 @@ export const allowedOrigins = Array.from(
   ])
 );
 
-export const isOriginAllowed = (origin) =>
-  !origin || allowedOrigins.includes(origin) || isAllowedVercelPreview(origin);
+export const isOriginAllowed = (origin) => {
+  const normalizedOrigin = normalizeOrigin(origin);
+
+  return (
+    !normalizedOrigin ||
+    allowedOrigins.includes(normalizedOrigin) ||
+    isAllowedVercelPreview(normalizedOrigin)
+  );
+};
 
 export const corsOptions = {
   origin(origin, callback) {
