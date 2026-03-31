@@ -156,7 +156,7 @@ cp .env.example .env
 
 Edit `.env`:
 ```env
-
+cp .env.example .env
 ```
 
 #### 3. Start Frontend
