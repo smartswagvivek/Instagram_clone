@@ -30,7 +30,27 @@ A **production-ready** Instagram clone built with the MERN stack (MongoDB, Expre
 
 ---
 
-## 📁 Project Structure
+## � Quick Deploy
+
+**Ready to deploy?** Follow our step-by-step guide:
+
+### Backend (Render)
+1. Push code to GitHub
+2. Connect to [Render.com](https://render.com)
+3. Deploy with `render.yaml` config
+4. Add environment variables
+
+### Frontend (Vercel)
+1. Connect GitHub repo to [Vercel.com](https://vercel.com)
+2. Set build settings (Vite, `dist` output)
+3. Add `VITE_API_URL` environment variable
+
+### 📖 Full Deployment Guide
+See [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for complete instructions.
+
+---
+
+## �📁 Project Structure
 
 ```
 Instagram/
