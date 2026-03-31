@@ -1,0 +1,161 @@
+@import url('https://fonts.googleapis.com/css2?family=Grand+Hotel&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ig-primary-background: 255, 255, 255;
+  --ig-secondary-background: 245, 245, 245;
+  --ig-elevated-background: 255, 255, 255;
+  --ig-separator: 219, 219, 219;
+  --ig-primary-text: 38, 38, 38;
+  --ig-secondary-text: 115, 115, 115;
+  --ig-primary-button: 0, 149, 246;
+  --ig-primary-button-hover: 24, 119, 242;
+  --ig-story-pink: 255, 1, 105;
+  --ig-story-orange: 255, 122, 0;
+  --ig-story-red: 255, 48, 64;
+  --ig-story-purple: 118, 56, 250;
+}
+
+.dark {
+  --ig-primary-background: 0, 0, 0;
+  --ig-secondary-background: 18, 18, 18;
+  --ig-elevated-background: 18, 18, 18;
+  --ig-separator: 54, 54, 54;
+  --ig-primary-text: 245, 245, 245;
+  --ig-secondary-text: 168, 168, 168;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: rgb(var(--ig-primary-background));
+  color: rgb(var(--ig-primary-text));
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ig-surface {
+  background: rgb(var(--ig-elevated-background));
+  border: 1px solid rgb(var(--ig-separator));
+}
+
+.ig-input {
+  width: 100%;
+  border: 1px solid rgb(var(--ig-separator));
+  border-radius: 6px;
+  background: rgb(var(--ig-secondary-background));
+  padding: 9px 8px 7px;
+  font-size: 14px;
+  line-height: 18px;
+  color: rgb(var(--ig-primary-text));
+  outline: none;
+}
+
+.ig-input:focus {
+  background: rgb(var(--ig-primary-background));
+}
+
+.ig-button-primary {
+  border-radius: 8px;
+  background: rgb(var(--ig-primary-button));
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 7px 16px;
+}
+
+.ig-button-primary:hover {
+  background: rgb(var(--ig-primary-button-hover));
+}
+
+.font-instagram {
+  font-family: 'Grand Hotel', cursive;
+}
+
+.ig-logo-gradient {
+  background: linear-gradient(90deg, #feda75 0%, #fa7e1e 24%, #d62976 58%, #962fbf 80%, #4f5bd5 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ig-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  border-radius: 0.95rem;
+  padding: 0.9rem 0.85rem;
+  font-size: 1rem;
+  line-height: 1.25rem;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.ig-nav-item:hover {
+  background: rgba(var(--ig-separator), 0.22);
+}
+
+.ig-nav-item-active {
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 700;
+}
+
+.dark .ig-nav-item-active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.story-ring {
+  background: linear-gradient(
+    45deg,
+    rgb(255, 214, 0) 5%,
+    rgb(var(--ig-story-orange)) 35%,
+    rgb(var(--ig-story-red)) 55%,
+    rgb(var(--ig-story-pink)) 70%,
+    rgb(var(--ig-story-purple)) 100%
+  );
+}
+
+.story-ring-viewed {
+  background: linear-gradient(45deg, #c7c7c7 0%, #b2b2b2 40%, #9a9a9a 100%);
+}
+
+.dark .story-ring-viewed {
+  background: linear-gradient(45deg, #4a4a4a 0%, #3f3f3f 45%, #343434 100%);
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes story-progress {
+  from {
+    width: 0%;
+  }
+
+  to {
+    width: 100%;
+  }
+}
