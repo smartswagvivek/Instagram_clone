@@ -8,7 +8,7 @@ const InstagramLogo = ({ className = '' }) => {
     <Link
       to="/feed"
       className={`inline-flex items-center gap-3 ${className}`}
-      aria-label="Instagram Home"
+      aria-label="Instagraam Home"
     >
       <svg viewBox="0 0 48 48" className="h-8 w-8 shrink-0" role="img" aria-hidden="true">
         <defs>
@@ -25,7 +25,9 @@ const InstagramLogo = ({ className = '' }) => {
         <circle cx="24" cy="24" r="5.8" fill="none" stroke="white" strokeWidth="2.8" />
         <circle cx="31.2" cy="16.8" r="1.9" fill="white" />
       </svg>
-      <span className="font-instagram ig-logo-gradient text-[2.35rem] leading-none">Instagram</span>
+      <span className="font-instagram ig-logo-gradient inline-block translate-y-[1px] px-[1px] pb-1 text-[2.35rem] leading-[0.95] tracking-[0.01em]">
+        Instagraam
+      </span>
     </Link>
   );
 };

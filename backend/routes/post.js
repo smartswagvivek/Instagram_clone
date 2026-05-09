@@ -7,12 +7,15 @@ import {
   fetchExplore,
   fetchFeed,
   fetchReels,
+  getPostsByHashtag,
+  getPostsByLocation,
   getPost,
   getUserPosts,
   likePost,
   savePost,
   searchPosts,
   sharePost,
+  toggleArchivePost,
   unlikePost,
   unsavePost,
   updatePost,
@@ -37,6 +40,8 @@ router.get('/feed', protect, paginationValidator, validate, fetchFeed);
 router.get('/explore', optional, paginationValidator, validate, fetchExplore);
 router.get('/reels', optional, paginationValidator, validate, fetchReels);
 router.get('/search', optional, [query('q').trim().isLength({ min: 1 })], validate, searchPosts);
+router.get('/hashtag/:tag', optional, getPostsByHashtag);
+router.get('/location/:location', optional, getPostsByLocation);
 router.get('/user/:userId', optional, [param('userId').isMongoId()], validate, getUserPosts);
 router.post(
   '/:id/comment',
@@ -55,6 +60,7 @@ router.post('/:id/unlike', protect, postIdParamValidator, validate, unlikePost);
 router.post('/:id/save', protect, postIdParamValidator, validate, savePost);
 router.post('/:id/unsave', protect, postIdParamValidator, validate, unsavePost);
 router.post('/:id/share', protect, postIdParamValidator, validate, sharePost);
+router.post('/:id/archive', protect, postIdParamValidator, validate, toggleArchivePost);
 router.put('/:id', protect, postIdParamValidator, createPostValidator, validate, updatePost);
 router.delete('/:id', protect, postIdParamValidator, validate, deletePost);
 

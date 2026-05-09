@@ -1,7 +1,7 @@
 {
-  "name": "instagram-clone-backend",
+  "name": "instagraam-clone-backend",
   "version": "1.0.0",
-  "description": "Production-ready Instagram clone backend API",
+  "description": "Production-ready Instagraam clone backend API",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -14,7 +14,7 @@
     "check": "node --check server.js"
   },
   "keywords": [
-    "instagram",
+    "instagraam",
     "clone",
     "mern",
     "social-media"

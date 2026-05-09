@@ -1,7 +1,7 @@
 {
-  "name": "instagram-clone-frontend",
+  "name": "instagraam-clone-frontend",
   "version": "1.0.0",
-  "description": "Instagram clone frontend built with React",
+  "description": "Instagraam clone frontend built with React",
   "private": true,
   "type": "module",
   "proxy": "http://localhost:5000",

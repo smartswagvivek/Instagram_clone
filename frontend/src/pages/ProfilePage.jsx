@@ -1,4 +1,4 @@
-import { Bookmark, Camera, Heart, Lock, MessageCircle, Unlock, X } from 'lucide-react';
+import { Archive, Bookmark, Camera, Film, Grid3x3, Heart, Lock, MessageCircle, Plus, Tags, Unlock, UserMinus, UserPlus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -6,10 +6,13 @@ import { useDispatch, useSelector } from 'react-redux';
 import { loadCurrentUser, setAuthenticatedUser } from '../redux/slices/authSlice';
 import {
   acceptFollowRequest,
+  createHighlight,
+  deleteHighlight,
   fetchFollowRequests,
   fetchProfile,
   followUser,
   rejectFollowRequest,
+  removeFollower,
   removeProfilePhoto,
   unfollowUser,
   updateProfile,
@@ -21,6 +24,7 @@ import { showToast } from '../redux/slices/uiSlice';
 import CommentSection from '../components/CommentSection';
 import { ProfileGridSkeleton } from '../components/skeletons/ProfileSkeleton';
 import EmptyStates from '../components/EmptyState';
+import api from '../services/api';
 
 const ProfilePage = () => {
   const dispatch = useDispatch();
@@ -30,12 +34,18 @@ const ProfilePage = () => {
   const profile = useSelector((state) => state.posts.profile);
   const profileStatus = useSelector((state) => state.posts.profileStatus);
   const { user, posts, canViewPosts, isFollowing, hasPendingRequest } = profile;
+  const [activeTab, setActiveTab] = useState('posts');
   const [isEditing, setIsEditing] = useState(false);
   const [activeList, setActiveList] = useState(null);
   const [selectedPostId, setSelectedPostId] = useState(null);
   const [isPostCommentsOpen, setIsPostCommentsOpen] = useState(true);
   const [isAvatarPreviewOpen, setIsAvatarPreviewOpen] = useState(false);
   const [avatarFile, setAvatarFile] = useState(null);
+  const [isFollowActionPending, setIsFollowActionPending] = useState(false);
+  const [listUsers, setListUsers] = useState([]);
+  const [listActionUserId, setListActionUserId] = useState(null);
+  const [isHighlightModalOpen, setIsHighlightModalOpen] = useState(false);
+  const [highlightTitle, setHighlightTitle] = useState('');
   const [form, setForm] = useState({
     username: '',
     fullName: '',
@@ -44,7 +54,20 @@ const ProfilePage = () => {
     isPrivate: false,
   });
 
-  const selectedPost = selectedPostId ? posts.find((post) => post._id === selectedPostId) : null;
+  const profilePosts =
+    activeTab === 'reels'
+      ? profile.reels || []
+      : activeTab === 'tagged'
+        ? profile.taggedPosts || []
+        : activeTab === 'archived'
+          ? profile.archivedPosts || []
+          : posts || [];
+
+  const selectedPost = selectedPostId
+    ? [...(posts || []), ...(profile.reels || []), ...(profile.taggedPosts || []), ...(profile.archivedPosts || [])].find(
+        (post) => post._id === selectedPostId
+      )
+    : null;
 
   useEffect(() => {
     if (authUser?._id) {
@@ -69,6 +92,57 @@ const ProfilePage = () => {
       dispatch(fetchFollowRequests());
     }
   }, [authUser?._id, dispatch, identifier, authUser?.username]);
+
+  useEffect(() => {
+    if (!activeList || !user) {
+      setListUsers([]);
+      return;
+    }
+
+    const rawEntries = user[activeList] || [];
+    if (rawEntries.length === 0) {
+      setListUsers([]);
+      return;
+    }
+
+    const populatedEntries = rawEntries.filter((entry) => entry && typeof entry === 'object' && entry.username);
+    if (populatedEntries.length === rawEntries.length) {
+      setListUsers(populatedEntries);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadListUsers = async () => {
+      try {
+        const resolvedUsers = await Promise.all(
+          rawEntries.map(async (entry) => {
+            if (entry && typeof entry === 'object' && entry.username) {
+              return entry;
+            }
+
+            const userId = String(entry?._id || entry);
+            const { data } = await api.get(`/users/${userId}`);
+            return data?.user || data;
+          })
+        );
+
+        if (!cancelled) {
+          setListUsers(resolvedUsers.filter(Boolean));
+        }
+      } catch {
+        if (!cancelled) {
+          setListUsers(populatedEntries);
+        }
+      }
+    };
+
+    loadListUsers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeList, user]);
 
   const isOwnProfile = String(user?._id) === String(authUser?._id);
   const followsYou = (authUser?.followers || []).some(
@@ -130,11 +204,55 @@ const ProfilePage = () => {
 
   if (!user) return null;
 
+  const createNewHighlight = async () => {
+    const storyIds = (profile.activeStories || []).map((story) => story._id);
+    if (!highlightTitle.trim() || storyIds.length === 0) return;
+
+    const result = await dispatch(createHighlight({ title: highlightTitle.trim(), storyIds }));
+    if (!result.error) {
+      setHighlightTitle('');
+      setIsHighlightModalOpen(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'posts', label: 'Posts', icon: Grid3x3, visible: true },
+    { id: 'reels', label: 'Reels', icon: Film, visible: true },
+    { id: 'tagged', label: 'Tagged', icon: Tags, visible: true },
+    { id: 'archived', label: 'Archive', icon: Archive, visible: isOwnProfile },
+  ].filter((item) => item.visible);
+
   const handleFollowToggle = async () => {
+    if (isFollowActionPending) return;
+
+    setIsFollowActionPending(true);
+    const previousAuthUser = authUser;
+    const optimisticFollowing = isFollowing
+      ? (authUser?.following || []).filter(
+          (entry) => String(entry?._id || entry) !== String(user._id)
+        )
+      : [...(authUser?.following || []), user._id];
+    const optimisticFollowRequestsSent =
+      isFollowing || hasPendingRequest
+        ? (authUser?.followRequestsSent || []).filter(
+            (entry) => String(entry?._id || entry) !== String(user._id)
+          )
+        : authUser?.followRequestsSent || [];
+
+    dispatch(
+      setAuthenticatedUser({
+        ...authUser,
+        following: optimisticFollowing,
+        followRequestsSent: optimisticFollowRequestsSent,
+      })
+    );
+
     const result = await dispatch(isFollowing || hasPendingRequest ? unfollowUser(user._id) : followUser(user._id));
 
     if (result.error) {
+      dispatch(setAuthenticatedUser(previousAuthUser));
       dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update follow.' }));
+      setIsFollowActionPending(false);
       return;
     }
 
@@ -167,9 +285,10 @@ const ProfilePage = () => {
               ? `You unfollowed ${user.username}.`
               : hasPendingRequest
                 ? `Follow request removed.`
-                : `You followed ${user.username}.`,
+          : `You followed ${user.username}.`,
       })
     );
+    setIsFollowActionPending(false);
   };
 
   const handleProfileSave = async (event) => {
@@ -231,6 +350,56 @@ const ProfilePage = () => {
     );
   };
 
+  const isAuthFollowing = (targetUserId) =>
+    (authUser?.following || []).some((entry) => String(entry?._id || entry) === String(targetUserId));
+
+  const handleListFollowToggle = async (targetUser) => {
+    if (!targetUser?._id || listActionUserId) return;
+
+    setListActionUserId(targetUser._id);
+    const alreadyFollowing = isAuthFollowing(targetUser._id);
+    const result = await dispatch(alreadyFollowing ? unfollowUser(targetUser._id) : followUser(targetUser._id));
+
+    if (result.error) {
+      dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update follow.' }));
+      setListActionUserId(null);
+      return;
+    }
+
+    dispatch(loadCurrentUser());
+    dispatch(fetchProfile({ identifier: identifier || user._id }));
+    dispatch(
+      showToast({
+        tone: 'success',
+        message: alreadyFollowing
+          ? `You unfollowed ${targetUser.username}.`
+          : result.payload?.status === 'requested'
+            ? `Follow request sent to ${targetUser.username}.`
+            : `You followed ${targetUser.username}.`,
+      })
+    );
+    setListActionUserId(null);
+  };
+
+  const handleRemoveFollower = async (targetUser) => {
+    if (!targetUser?._id || listActionUserId) return;
+
+    setListActionUserId(targetUser._id);
+    const result = await dispatch(removeFollower(targetUser._id));
+
+    if (result.error) {
+      dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to remove follower.' }));
+      setListActionUserId(null);
+      return;
+    }
+
+    setListUsers((current) => current.filter((entry) => String(entry._id) !== String(targetUser._id)));
+    dispatch(loadCurrentUser());
+    dispatch(fetchProfile({ identifier: identifier || user._id }));
+    dispatch(showToast({ tone: 'success', message: `${targetUser.username} was removed from your followers.` }));
+    setListActionUserId(null);
+  };
+
   return (
     <div className="mx-auto max-w-[935px] px-4 py-8">
       <section className="border-b border-[#dbdbdb] pb-11 dark:border-[#262626]">
@@ -280,6 +449,7 @@ const ProfilePage = () => {
                   <button
                     type="button"
                     onClick={handleFollowToggle}
+                    disabled={isFollowActionPending}
                     className={
                       isFollowing || hasPendingRequest
                         ? 'rounded-lg bg-[#efefef] px-4 py-1.5 text-sm font-semibold dark:bg-[#262626]'
@@ -349,26 +519,94 @@ const ProfilePage = () => {
         <section className="mt-8">
           <ProfileGridSkeleton />
         </section>
-      ) : posts?.length === 0 ? (
-        <section className="mt-8">
-          {EmptyStates.noPosts()}
-        </section>
       ) : (
-        <section className="mt-8 grid grid-cols-3 gap-1">
-          {posts?.map((post) => (
-            <button
-              type="button"
-              key={post._id}
-              onClick={() => setSelectedPostId(post._id)}
-              className="group relative aspect-square overflow-hidden bg-[#fafafa] dark:bg-[#121212]"
-            >
-              <img src={post.media?.[0]?.url} alt={post.caption} className="h-full w-full object-cover" />
-              <div className="absolute inset-0 hidden items-center justify-center bg-black/40 text-sm font-semibold text-white group-hover:flex">
-                {post.likes?.length || 0} likes
+        <>
+          <section className="mt-8 flex items-start gap-4 overflow-x-auto pb-2">
+            {(profile.highlights || []).map((highlight) => (
+              <div key={highlight.id} className="flex w-24 shrink-0 flex-col items-center text-center">
+                <button
+                  type="button"
+                  onClick={() => {}}
+                  className="story-ring flex h-20 w-20 items-center justify-center rounded-full p-[2px]"
+                >
+                  <img
+                    src={highlight.coverImage || highlight.items?.[0]?.media?.url || user.profilePicture?.url}
+                    alt={highlight.title}
+                    className="h-[72px] w-[72px] rounded-full border-2 border-white object-cover dark:border-black"
+                  />
+                </button>
+                <p className="mt-2 truncate text-xs font-medium">{highlight.title}</p>
+                {isOwnProfile && (
+                  <button
+                    type="button"
+                    onClick={() => dispatch(deleteHighlight(highlight.id))}
+                    className="mt-1 text-[11px] text-[#8e8e8e]"
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
-            </button>
-          ))}
-        </section>
+            ))}
+
+            {isOwnProfile && (profile.activeStories || []).length > 0 && (
+              <div className="flex w-24 shrink-0 flex-col items-center text-center">
+                <button
+                  type="button"
+                  onClick={() => setIsHighlightModalOpen(true)}
+                  className="flex h-20 w-20 items-center justify-center rounded-full border border-[#dbdbdb] bg-[#fafafa] dark:border-[#262626] dark:bg-[#121212]"
+                >
+                  <Plus size={24} />
+                </button>
+                <p className="mt-2 truncate text-xs font-medium">New</p>
+              </div>
+            )}
+          </section>
+
+          <section className="mt-8 border-t border-[#dbdbdb] pt-4 dark:border-[#262626]">
+            <div className="mb-6 flex flex-wrap items-center justify-center gap-6">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`inline-flex items-center gap-2 border-t-2 pt-3 text-xs font-semibold uppercase tracking-[0.18em] ${
+                      activeTab === tab.id
+                        ? 'border-[#262626] text-[#262626] dark:border-white dark:text-white'
+                        : 'border-transparent text-[#8e8e8e]'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {profilePosts?.length === 0 ? (
+            <section className="mt-8">
+              {EmptyStates.noPosts()}
+            </section>
+          ) : (
+            <section className="mt-8 grid grid-cols-3 gap-1">
+              {profilePosts?.map((post) => (
+                <button
+                  type="button"
+                  key={post._id}
+                  onClick={() => setSelectedPostId(post._id)}
+                  className="group relative aspect-square overflow-hidden bg-[#fafafa] dark:bg-[#121212]"
+                >
+                  <img src={post.media?.[0]?.url} alt={post.caption} className="h-full w-full object-cover" />
+                  <div className="absolute inset-0 hidden items-center justify-center bg-black/40 text-sm font-semibold text-white group-hover:flex">
+                    {post.likes?.length || 0} likes
+                  </div>
+                </button>
+              ))}
+            </section>
+          )}
+        </>
       )}
 
       {isEditing && (
@@ -460,17 +698,26 @@ const ProfilePage = () => {
             </div>
 
             <div className="max-h-[420px] overflow-y-auto p-4">
-              {(user[activeList] || []).length === 0 && (
+              {listUsers.length === 0 && (
                 <p className="text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">No users to show yet.</p>
               )}
 
               <div className="space-y-4">
-                {(user[activeList] || []).map((entry) => (
+                {listUsers.map((entry) => {
+                  const authIsEntry = String(entry._id) === String(authUser?._id);
+                  const followingEntry = isAuthFollowing(entry._id);
+                  const showRemoveFollower = isOwnProfile && activeList === 'followers' && !authIsEntry;
+                  const showFollowAction =
+                    activeList !== 'followRequestsReceived' &&
+                    !showRemoveFollower &&
+                    !authIsEntry;
+
+                  return (
                   <div key={entry._id} className="flex items-center justify-between gap-3">
                     <Link
                       to={`/profile/${entry.username}`}
                       onClick={() => setActiveList(null)}
-                      className="flex items-center gap-3"
+                      className="flex min-w-0 items-center gap-3"
                     >
                       <img
                         src={entry.profilePicture?.url}
@@ -484,6 +731,34 @@ const ProfilePage = () => {
                         </p>
                       </div>
                     </Link>
+
+                    {showFollowAction && (
+                      <button
+                        type="button"
+                        onClick={() => handleListFollowToggle(entry)}
+                        disabled={listActionUserId === entry._id}
+                        className={
+                          followingEntry
+                            ? 'inline-flex items-center gap-2 rounded-lg bg-[#efefef] px-3 py-2 text-sm font-semibold dark:bg-[#262626]'
+                            : 'ig-button-primary inline-flex items-center gap-2'
+                        }
+                      >
+                        {followingEntry ? <UserMinus size={14} /> : <UserPlus size={14} />}
+                        {followingEntry ? 'Following' : 'Follow'}
+                      </button>
+                    )}
+
+                    {showRemoveFollower && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveFollower(entry)}
+                        disabled={listActionUserId === entry._id}
+                        className="inline-flex items-center gap-2 rounded-lg bg-[#efefef] px-3 py-2 text-sm font-semibold text-[#262626] dark:bg-[#262626] dark:text-white"
+                      >
+                        <UserMinus size={14} />
+                        Remove
+                      </button>
+                    )}
 
                     {activeList === 'followRequestsReceived' && (
                       <div className="flex gap-2">
@@ -504,7 +779,8 @@ const ProfilePage = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -529,6 +805,31 @@ const ProfilePage = () => {
               alt={user.username}
               className="max-h-[80vh] w-full rounded-3xl object-contain"
             />
+          </div>
+        </div>
+      )}
+
+      {isHighlightModalOpen && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/70 px-4">
+          <div className="ig-surface w-full max-w-md rounded-3xl bg-white p-5 dark:bg-black">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Create highlight</h2>
+              <button type="button" onClick={() => setIsHighlightModalOpen(false)} className="text-sm text-[#8e8e8e]">
+                Close
+              </button>
+            </div>
+            <input
+              value={highlightTitle}
+              onChange={(event) => setHighlightTitle(event.target.value)}
+              placeholder="Highlight title"
+              className="ig-input"
+            />
+            <p className="mt-3 text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
+              This will save your current active stories into a profile highlight.
+            </p>
+            <button type="button" onClick={createNewHighlight} className="ig-button-primary mt-5 w-full">
+              Save highlight
+            </button>
           </div>
         </div>
       )}

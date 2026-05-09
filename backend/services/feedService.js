@@ -53,15 +53,18 @@ export const getFeed = async ({ user, page, limit, mode = 'algorithmic' }) => {
   };
 };
 
-export const getExploreFeed = async ({ page, limit, q }) => {
+export const getExploreFeed = async ({ page, limit, q, filter = 'all' }) => {
   const query = {
     visibility: 'public',
     isArchived: false,
+    ...(filter === 'reels' ? { isReel: true } : {}),
+    ...(filter === 'posts' ? { isReel: false } : {}),
     ...(q
       ? {
           $or: [
             { caption: { $regex: q, $options: 'i' } },
             { hashtags: { $regex: q, $options: 'i' } },
+            { location: { $regex: q, $options: 'i' } },
           ],
         }
       : {}),

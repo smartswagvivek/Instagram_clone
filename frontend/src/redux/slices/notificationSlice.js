@@ -53,6 +53,13 @@ const notificationSlice = createSlice({
       state.items = [action.payload, ...state.items];
       state.unreadCount += 1;
     },
+    removeNotification(state, action) {
+      const removed = state.items.find((item) => item._id === action.payload);
+      state.items = state.items.filter((item) => item._id !== action.payload);
+      if (removed && !removed.isRead) {
+        state.unreadCount = Math.max(state.unreadCount - 1, 0);
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -73,5 +80,5 @@ const notificationSlice = createSlice({
   },
 });
 
-export const { pushNotification } = notificationSlice.actions;
+export const { pushNotification, removeNotification } = notificationSlice.actions;
 export default notificationSlice.reducer;

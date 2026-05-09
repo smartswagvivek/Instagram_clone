@@ -1,6 +1,8 @@
 import Comment from '../models/Comment.js';
 import Post from '../models/Post.js';
 import User from '../models/User.js';
+import Story from '../models/Story.js';
+import Message from '../models/Message.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { getPagination } from '../utils/pagination.js';
 import { getExploreFeed, getFeed } from '../services/feedService.js';
@@ -60,7 +62,7 @@ export const fetchFeed = asyncHandler(async (req, res) => {
 
 export const fetchExplore = asyncHandler(async (req, res) => {
   const { page, limit } = getPagination(req.query.page, req.query.limit || 15);
-  const payload = await getExploreFeed({ page, limit, q: req.query.q || '' });
+  const payload = await getExploreFeed({ page, limit, q: req.query.q || '', filter: req.query.filter || 'all' });
   res.json(payload);
 });
 
@@ -81,12 +83,26 @@ export const fetchReels = asyncHandler(async (req, res) => {
 
 export const searchPosts = asyncHandler(async (req, res) => {
   const q = req.query.q?.trim() || '';
-  const posts = await Post.find({
+  const filter = req.query.filter || 'all';
+  const baseQuery = {
     visibility: 'public',
     isArchived: false,
+  };
+
+  if (filter === 'reels') {
+    baseQuery.isReel = true;
+  }
+
+  if (filter === 'posts') {
+    baseQuery.isReel = false;
+  }
+
+  const posts = await Post.find({
+    ...baseQuery,
     $or: [
       { caption: { $regex: q, $options: 'i' } },
       { hashtags: { $regex: q, $options: 'i' } },
+      { location: { $regex: q, $options: 'i' } },
     ],
   })
     .populate('author', 'username fullName profilePicture')
@@ -288,12 +304,115 @@ export const sharePost = asyncHandler(async (req, res) => {
   }
 
   post.stats.sharesCount += 1;
-  await post.save();
-
-  res.json({
+  const response = {
     message: 'Share tracked successfully',
     shareUrl: `${req.protocol}://${req.get('host')}/post/${post._id}`,
-  });
+  };
+
+  if (req.body.recipientId) {
+    const recipient = await User.findById(req.body.recipientId);
+    if (!recipient) {
+      const error = new Error('Recipient not found');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    const message = await Message.create({
+      sender: req.user._id,
+      recipient: recipient._id,
+      text: req.body.text || '',
+      sharedPost: post._id,
+    });
+
+    await message.populate([
+      { path: 'sender', select: 'username fullName profilePicture' },
+      { path: 'recipient', select: 'username fullName profilePicture' },
+      { path: 'sharedPost', populate: { path: 'author', select: 'username fullName profilePicture' } },
+    ]);
+
+    req.app.get('io')?.to(String(recipient._id)).emit('message:new', message);
+    response.sharedMessage = message;
+  }
+
+  if (req.body.toStory) {
+    const storyMedia = post.media?.[0];
+    if (!storyMedia) {
+      const error = new Error('Post media unavailable for story sharing');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const storyCaption = (req.body.storyCaption || post.caption || '').slice(0, 250);
+    const story = await Story.create({
+      author: req.user._id,
+      media: {
+        url: storyMedia.url,
+        publicId: storyMedia.publicId,
+        type: storyMedia.type || 'image',
+      },
+      caption: storyCaption,
+      visibility: req.body.visibility || 'followers',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+
+    await story.populate('author', 'username fullName profilePicture');
+    response.message = 'Shared to your story';
+    response.story = story;
+  }
+
+  await post.save();
+
+  res.json(response);
+});
+
+export const toggleArchivePost = asyncHandler(async (req, res) => {
+  const post = await Post.findById(req.params.id);
+
+  if (!post) {
+    const error = new Error('Post not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (String(post.author) !== String(req.user._id)) {
+    const error = new Error('Not authorized to archive this post');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  post.isArchived = !post.isArchived;
+  await post.save();
+  await post.populate('author', 'username fullName profilePicture isVerified');
+
+  res.json({ message: post.isArchived ? 'Post archived' : 'Post restored', post });
+});
+
+export const getPostsByHashtag = asyncHandler(async (req, res) => {
+  const tag = req.params.tag.toLowerCase();
+  const posts = await Post.find({
+    hashtags: tag,
+    visibility: 'public',
+    isArchived: false,
+  })
+    .populate('author', 'username fullName profilePicture isVerified')
+    .sort({ createdAt: -1 })
+    .limit(36);
+
+  res.json({ tag, posts });
+});
+
+export const getPostsByLocation = asyncHandler(async (req, res) => {
+  const location = decodeURIComponent(req.params.location);
+  const posts = await Post.find({
+    location: { $regex: `^${location}$`, $options: 'i' },
+    visibility: 'public',
+    isArchived: false,
+  })
+    .populate('author', 'username fullName profilePicture isVerified')
+    .sort({ createdAt: -1 })
+    .limit(36);
+
+  res.json({ location, posts });
 });
 
 export const deletePost = asyncHandler(async (req, res) => {

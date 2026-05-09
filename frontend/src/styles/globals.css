@@ -86,6 +86,8 @@ a {
 
 .font-instagram {
   font-family: 'Grand Hotel', cursive;
+  font-variant-ligatures: no-common-ligatures;
+  text-rendering: geometricPrecision;
 }
 
 .ig-logo-gradient {

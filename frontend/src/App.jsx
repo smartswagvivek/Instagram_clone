@@ -8,12 +8,14 @@ import AdminPage from './pages/AdminPage';
 import CreatePostPage from './pages/CreatePostPage';
 import ExplorePage from './pages/ExplorePage';
 import FeedPage from './pages/FeedPage';
+import DiscoveryPage from './pages/DiscoveryPage';
 import LoginPage from './pages/LoginPage';
 import MessagesPage from './pages/MessagesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProfilePage from './pages/ProfilePage';
 import ReelsPage from './pages/ReelsPage';
 import SavedPage from './pages/SavedPage';
+import SettingsPage from './pages/SettingsPage';
 import SignupPage from './pages/SignupPage';
 import { loadCurrentUser } from './redux/slices/authSlice';
 import { pushNotification } from './redux/slices/notificationSlice';
@@ -94,11 +96,14 @@ const App = () => {
             <Route path="/feed" element={<FeedPage />} />
             <Route path="/search" element={<ExplorePage />} />
             <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/explore/hashtag/:tag" element={<DiscoveryPage mode="hashtag" />} />
+            <Route path="/explore/location/:location" element={<DiscoveryPage mode="location" />} />
             <Route path="/reels" element={<ReelsPage />} />
             <Route path="/create" element={<CreatePostPage />} />
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/saved" element={<SavedPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/profile/:identifier" element={<ProfilePage />} />
             <Route path="/admin" element={<AdminPage />} />

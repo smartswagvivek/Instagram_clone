@@ -30,7 +30,7 @@ export const sendAppEmail = async ({ to, subject, text, html }) => {
   try {
     const transporter = await getTransporter();
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_USER || 'no-reply@instagram-clone.local',
+      from: process.env.EMAIL_USER || 'no-reply@instagraam-clone.local',
       to,
       subject,
       text,
@@ -54,7 +54,7 @@ export const sendAppEmail = async ({ to, subject, text, html }) => {
 export const sendActivityEmail = async ({ recipientEmail, actorUsername, actionText }) => {
   if (!recipientEmail) return null;
 
-  const subject = `Instagram alert: ${actorUsername} ${actionText}`;
+  const subject = `Instagraam alert: ${actorUsername} ${actionText}`;
   const text = `${actorUsername} ${actionText}.`;
 
   return sendAppEmail({

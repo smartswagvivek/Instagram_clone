@@ -8,7 +8,11 @@ export const uploadMediaFiles = async (files = [], folder = 'posts') =>
       return {
         url: uploaded.secure_url,
         publicId: uploaded.public_id,
-        type: file.mimetype?.startsWith('video') ? 'video' : 'image',
+        type: file.mimetype?.startsWith('video')
+          ? 'video'
+          : file.mimetype?.startsWith('audio')
+            ? 'audio'
+            : 'image',
       };
     })
   );

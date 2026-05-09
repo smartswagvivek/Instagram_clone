@@ -22,11 +22,20 @@ const formatTimestamp = (value) =>
 const CommentNode = ({ comment, postId, authUser, dispatch, depth = 0 }) => {
   const [showReplyForm, setShowReplyForm] = useState(false);
   const [replyText, setReplyText] = useState('');
+  const [optimisticLiked, setOptimisticLiked] = useState(false);
+  const [isLikePending, setIsLikePending] = useState(false);
   const canDelete =
     String(comment.author?._id) === String(authUser?._id) || authUser?.role === 'admin';
   const liked = (comment.likes || []).some(
     (entry) => String(entry?._id || entry) === String(authUser?._id)
   );
+  const displayedLiked = isLikePending ? optimisticLiked : liked;
+  const displayedLikesCount =
+    (comment.likes?.length || 0) + (displayedLiked === liked ? 0 : displayedLiked ? 1 : -1);
+
+  useEffect(() => {
+    setOptimisticLiked(liked);
+  }, [liked]);
 
   const handleReply = async (event) => {
     event.preventDefault();
@@ -44,6 +53,25 @@ const CommentNode = ({ comment, postId, authUser, dispatch, depth = 0 }) => {
     }
 
     dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to post reply.' }));
+  };
+
+  const handleLikeToggle = async () => {
+    if (isLikePending) return;
+
+    const nextLiked = !displayedLiked;
+    setIsLikePending(true);
+    setOptimisticLiked(nextLiked);
+
+    const result = await dispatch(
+      toggleCommentLike({ postId, commentId: comment._id, liked: displayedLiked })
+    );
+
+    if (result.error) {
+      setOptimisticLiked(displayedLiked);
+      dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update comment like.' }));
+    }
+
+    setIsLikePending(false);
   };
 
   return (
@@ -71,13 +99,11 @@ const CommentNode = ({ comment, postId, authUser, dispatch, depth = 0 }) => {
             <span>{formatTimestamp(comment.createdAt)}</span>
             <button
               type="button"
-              onClick={() =>
-                dispatch(toggleCommentLike({ postId, commentId: comment._id, liked }))
-              }
-              className={`flex items-center gap-1 ${liked ? 'text-[#ed4956]' : ''}`}
+              onClick={handleLikeToggle}
+              className={`flex items-center gap-1 ${displayedLiked ? 'text-[#ed4956]' : ''}`}
             >
-              <Heart size={12} fill={liked ? 'currentColor' : 'none'} />
-              <span>{comment.likes?.length || 0}</span>
+              <Heart size={12} fill={displayedLiked ? 'currentColor' : 'none'} />
+              <span>{displayedLikesCount}</span>
             </button>
             <button
               type="button"

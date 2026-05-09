@@ -44,6 +44,48 @@ const setupSocketIO = (io) => {
       });
     });
 
+    socket.on('call:invite', ({ recipientId, callId, callType }) => {
+      io.to(String(recipientId)).emit('call:incoming', {
+        callId,
+        callType,
+        fromUser: {
+          _id: socket.userId,
+          username: socket.user.username,
+          fullName: socket.user.fullName,
+          profilePicture: socket.user.profilePicture,
+        },
+      });
+    });
+
+    socket.on('call:accept', ({ recipientId, callId }) => {
+      io.to(String(recipientId)).emit('call:accepted', {
+        callId,
+        fromUserId: socket.userId,
+      });
+    });
+
+    socket.on('call:decline', ({ recipientId, callId }) => {
+      io.to(String(recipientId)).emit('call:declined', {
+        callId,
+        fromUserId: socket.userId,
+      });
+    });
+
+    socket.on('call:end', ({ recipientId, callId }) => {
+      io.to(String(recipientId)).emit('call:ended', {
+        callId,
+        fromUserId: socket.userId,
+      });
+    });
+
+    socket.on('call:signal', ({ recipientId, callId, signal }) => {
+      io.to(String(recipientId)).emit('call:signal', {
+        callId,
+        signal,
+        fromUserId: socket.userId,
+      });
+    });
+
     socket.on('disconnect', async () => {
       connectedUsers.delete(socket.userId);
       await User.findByIdAndUpdate(socket.userId, { status: 'offline' });

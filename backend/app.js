@@ -30,7 +30,7 @@ app.use(rateLimiter);
 app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'instagram-clone-api',
+    service: 'instagraam-clone-api',
     timestamp: new Date().toISOString(),
   });
 });

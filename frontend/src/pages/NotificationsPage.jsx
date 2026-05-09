@@ -2,19 +2,26 @@ import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import { loadCurrentUser } from '../redux/slices/authSlice';
-import { fetchNotifications, markAllRead } from '../redux/slices/notificationSlice';
+import { fetchNotifications, markAllRead, removeNotification } from '../redux/slices/notificationSlice';
 import { acceptFollowRequest, rejectFollowRequest } from '../redux/slices/postsSlice';
 import { showToast } from '../redux/slices/uiSlice';
 
 const NotificationsPage = () => {
   const dispatch = useDispatch();
   const { items, unreadCount } = useSelector((state) => state.notifications);
+  const authUser = useSelector((state) => state.auth.user);
 
   useEffect(() => {
     dispatch(fetchNotifications());
   }, [dispatch]);
 
-  const handleRequestDecision = async (userId, action) => {
+  const handleRequestDecision = async (notification, action) => {
+    const userId = notification.actor?._id;
+    if (!userId) {
+      dispatch(showToast({ tone: 'error', message: 'Unable to find the requesting user.' }));
+      return;
+    }
+
     const result = await dispatch(
       action === 'accept' ? acceptFollowRequest(userId) : rejectFollowRequest(userId)
     );
@@ -24,6 +31,7 @@ const NotificationsPage = () => {
       return;
     }
 
+    dispatch(removeNotification(notification._id));
     dispatch(loadCurrentUser());
     dispatch(fetchNotifications());
     dispatch(
@@ -52,52 +60,60 @@ const NotificationsPage = () => {
           {unreadCount} unread
         </div>
         <div>
-          {items.map((notification) => (
-            <div
-              key={notification._id}
-              className="flex items-start gap-3 border-b border-[#efefef] px-4 py-4 last:border-b-0 dark:border-[#1a1a1a]"
-            >
-              <img
-                src={notification.actor?.profilePicture?.url}
-                alt={notification.actor?.username}
-                className="h-11 w-11 rounded-full object-cover"
-              />
-              <div className="flex-1 text-sm leading-[18px]">
-                <p>
-                  <span className="font-semibold">{notification.actor?.username}</span>{' '}
-                  {notification.body || notification.title}
-                </p>
-                <p className="mt-1 text-xs text-[#8e8e8e] dark:text-[#a8a8a8]">
-                  {new Date(notification.createdAt).toLocaleString()}
-                </p>
-                {notification.type === 'follow_request' && (
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleRequestDecision(notification.actor?._id, 'accept')}
-                      className="ig-button-primary"
-                    >
-                      Accept
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRequestDecision(notification.actor?._id, 'reject')}
-                      className="rounded-lg bg-[#efefef] px-3 py-2 text-sm font-semibold dark:bg-[#262626]"
-                    >
-                      Reject
-                    </button>
-                  </div>
+          {items.map((notification) => {
+            const hasPendingFollowRequest =
+              notification.type === 'follow_request' &&
+              (authUser?.followRequestsReceived || []).some(
+                (entry) => String(entry?._id || entry) === String(notification.actor?._id)
+              );
+
+            return (
+              <div
+                key={notification._id}
+                className="flex items-start gap-3 border-b border-[#efefef] px-4 py-4 last:border-b-0 dark:border-[#1a1a1a]"
+              >
+                <img
+                  src={notification.actor?.profilePicture?.url}
+                  alt={notification.actor?.username}
+                  className="h-11 w-11 rounded-full object-cover"
+                />
+                <div className="flex-1 text-sm leading-[18px]">
+                  <p>
+                    <span className="font-semibold">{notification.actor?.username}</span>{' '}
+                    {notification.body || notification.title}
+                  </p>
+                  <p className="mt-1 text-xs text-[#8e8e8e] dark:text-[#a8a8a8]">
+                    {new Date(notification.createdAt).toLocaleString()}
+                  </p>
+                  {hasPendingFollowRequest && (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleRequestDecision(notification, 'accept')}
+                        className="ig-button-primary"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRequestDecision(notification, 'reject')}
+                        className="rounded-lg bg-[#efefef] px-3 py-2 text-sm font-semibold dark:bg-[#262626]"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {notification.post?.media?.[0]?.url && (
+                  <img
+                    src={notification.post.media[0].url}
+                    alt="Post preview"
+                    className="h-11 w-11 object-cover"
+                  />
                 )}
               </div>
-              {notification.post?.media?.[0]?.url && (
-                <img
-                  src={notification.post.media[0].url}
-                  alt="Post preview"
-                  className="h-11 w-11 object-cover"
-                />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

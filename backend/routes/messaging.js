@@ -3,10 +3,12 @@ import { body, param, query } from 'express-validator';
 
 import {
   deleteMessage,
+  editMessage,
   getConversation,
   getConversations,
   markMessageSeen,
   sendMessage,
+  toggleMessageReaction,
 } from '../controllers/messageController.js';
 import { protect } from '../middleware/auth.js';
 import { upload } from '../middleware/upload.js';
@@ -51,6 +53,14 @@ router.post(
   [body('recipientId').isMongoId(), body('text').optional({ checkFalsy: true }).trim()],
   validate,
   sendMessage
+);
+router.put('/:id', protect, [param('id').isMongoId(), body('text').trim().notEmpty()], validate, editMessage);
+router.post(
+  '/:id/reaction',
+  protect,
+  [param('id').isMongoId(), body('emoji').trim().notEmpty()],
+  validate,
+  toggleMessageReaction
 );
 router.put('/:id/mark-seen', protect, [param('id').isMongoId()], validate, markMessageSeen);
 router.delete('/:id', protect, [param('id').isMongoId()], validate, deleteMessage);

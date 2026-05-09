@@ -33,6 +33,86 @@ const savedCollectionSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const storyHighlightItemSchema = new mongoose.Schema(
+  {
+    storyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Story',
+    },
+    media: {
+      url: String,
+      publicId: String,
+      type: {
+        type: String,
+        enum: ['image', 'video'],
+        default: 'image',
+      },
+    },
+    caption: {
+      type: String,
+      default: '',
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const storyHighlightSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      required: true,
+    },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [40, 'Highlight title must not exceed 40 characters'],
+    },
+    coverImage: String,
+    items: {
+      type: [storyHighlightItemSchema],
+      default: [],
+    },
+    createdAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const notificationPreferencesSchema = new mongoose.Schema(
+  {
+    likes: { type: Boolean, default: true },
+    comments: { type: Boolean, default: true },
+    follows: { type: Boolean, default: true },
+    messages: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const accountSettingsSchema = new mongoose.Schema(
+  {
+    notificationPreferences: {
+      type: notificationPreferencesSchema,
+      default: () => ({}),
+    },
+    allowMessageRequestsFromEveryone: {
+      type: Boolean,
+      default: false,
+    },
+    showActivityStatus: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     username: {
@@ -113,6 +193,18 @@ const userSchema = new mongoose.Schema(
         ref: 'User',
       },
     ],
+    blockedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
+    restrictedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     savedPosts: [
       {
         type: mongoose.Schema.Types.ObjectId,
@@ -123,6 +215,16 @@ const userSchema = new mongoose.Schema(
       type: [savedCollectionSchema],
       default: [{ name: 'All Posts', posts: [] }],
     },
+    storyHighlights: {
+      type: [storyHighlightSchema],
+      default: [],
+    },
+    pinnedConversations: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+      },
+    ],
     isPrivate: {
       type: Boolean,
       default: false,
@@ -146,6 +248,10 @@ const userSchema = new mongoose.Schema(
       default: 'offline',
     },
     lastLogin: Date,
+    accountSettings: {
+      type: accountSettingsSchema,
+      default: () => ({}),
+    },
     refreshTokens: {
       type: [refreshTokenSchema],
       default: [],

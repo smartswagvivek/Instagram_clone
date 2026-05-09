@@ -152,7 +152,7 @@ const SignupPage = () => {
     <div className="flex min-h-screen items-center justify-center bg-[#fafafa] px-4 py-10 dark:bg-black">
       <div className="w-full max-w-[350px]">
         <div className="ig-surface bg-white px-10 py-8 text-center dark:bg-black">
-          <h1 className="text-[40px] font-semibold">Instagram</h1>
+          <h1 className="text-[40px] font-semibold">Instagraam</h1>
           <p className="mt-4 text-[17px] font-semibold text-[#737373]">
             Sign up to see photos and videos from your friends.
           </p>

@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 
 import { toggleTheme } from '../redux/slices/uiSlice';
 import CreateMenuModal from './CreateMenuModal';
+import GlobalCallLayer from './calls/GlobalCallLayer';
 import MobileBottomNav from './MobileBottomNav';
 import Navbar from './Navbar';
 import Sidebar from './Sidebar';
@@ -20,6 +21,7 @@ const MainLayout = () => {
       <Navbar />
       <ToastViewport />
       <CreateMenuModal />
+      <GlobalCallLayer />
 
       <div className="flex w-full">
         <Sidebar />

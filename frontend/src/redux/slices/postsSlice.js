@@ -14,6 +14,11 @@ const initialState = {
   profile: {
     user: null,
     posts: [],
+    reels: [],
+    taggedPosts: [],
+    archivedPosts: [],
+    activeStories: [],
+    highlights: [],
     canViewPosts: true,
     isFollowing: false,
     hasPendingRequest: false,
@@ -22,6 +27,7 @@ const initialState = {
     savedPosts: [],
     collections: [],
   },
+  settings: null,
   commentsByPost: {},
   userSearchResults: [],
   loading: false,
@@ -84,10 +90,11 @@ export const fetchFeedPosts = createAsyncThunk(
 
 export const fetchExplorePosts = createAsyncThunk(
   'posts/fetchExplorePosts',
-  async ({ page = 1, q = '' }, { rejectWithValue }) => {
+  async ({ page = 1, q = '', filter = 'all' }, { rejectWithValue }) => {
     try {
       const query = new URLSearchParams({ page, limit: 15 });
       if (q) query.set('q', q);
+      if (filter && filter !== 'all') query.set('filter', filter);
       const { data } = await api.get(`/posts/explore?${query.toString()}`);
       return { ...data, page };
     } catch (error) {
@@ -141,6 +148,117 @@ export const fetchSavedPosts = createAsyncThunk(
       return data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to load saved posts');
+    }
+  }
+);
+
+export const createCollection = createAsyncThunk(
+  'posts/createCollection',
+  async (name, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post('/users/saved/collections', { name });
+      return data.collections;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to create collection');
+    }
+  }
+);
+
+export const updateCollection = createAsyncThunk(
+  'posts/updateCollection',
+  async ({ currentName, name, postIds }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.put(`/users/saved/collections/${encodeURIComponent(currentName)}`, {
+        name,
+        postIds,
+      });
+      return data.collections;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to update collection');
+    }
+  }
+);
+
+export const deleteCollection = createAsyncThunk(
+  'posts/deleteCollection',
+  async (name, { rejectWithValue }) => {
+    try {
+      const { data } = await api.delete(`/users/saved/collections/${encodeURIComponent(name)}`);
+      return data.collections;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to delete collection');
+    }
+  }
+);
+
+export const createHighlight = createAsyncThunk(
+  'posts/createHighlight',
+  async ({ title, storyIds }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post('/users/highlights', { title, storyIds });
+      return data.highlight;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to create highlight');
+    }
+  }
+);
+
+export const deleteHighlight = createAsyncThunk(
+  'posts/deleteHighlight',
+  async (highlightId, { rejectWithValue }) => {
+    try {
+      const { data } = await api.delete(`/users/highlights/${highlightId}`);
+      return data.highlights;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to delete highlight');
+    }
+  }
+);
+
+export const fetchSettings = createAsyncThunk(
+  'posts/fetchSettings',
+  async (_, { rejectWithValue }) => {
+    try {
+      const { data } = await api.get('/users/settings');
+      return data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to load settings');
+    }
+  }
+);
+
+export const updatePrivacySettings = createAsyncThunk(
+  'posts/updatePrivacySettings',
+  async (payload, { rejectWithValue }) => {
+    try {
+      const { data } = await api.put('/users/privacy', payload);
+      return data.user;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to update privacy settings');
+    }
+  }
+);
+
+export const changePassword = createAsyncThunk(
+  'posts/changePassword',
+  async (payload, { rejectWithValue }) => {
+    try {
+      const { data } = await api.put('/users/password', payload);
+      return data.message;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to update password');
+    }
+  }
+);
+
+export const updateUserPreferenceList = createAsyncThunk(
+  'posts/updateUserPreferenceList',
+  async ({ type, userId, action }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.put(`/users/preferences/${type}`, { userId, action });
+      return { type, ...data };
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to update preference');
     }
   }
 );
@@ -289,6 +407,18 @@ export const unfollowUser = createAsyncThunk(
   }
 );
 
+export const removeFollower = createAsyncThunk(
+  'posts/removeFollower',
+  async (userId, { rejectWithValue }) => {
+    try {
+      const { data } = await api.delete(`/users/followers/${userId}`);
+      return data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to remove follower');
+    }
+  }
+);
+
 export const updateProfile = createAsyncThunk(
   'posts/updateProfile',
   async (payload, { rejectWithValue }) => {
@@ -379,9 +509,15 @@ export const deletePost = createAsyncThunk(
 
 export const sharePost = createAsyncThunk(
   'posts/sharePost',
-  async (postId, { rejectWithValue }) => {
+  async ({ postId, recipientId, text, toStory, storyCaption, visibility }, { rejectWithValue }) => {
     try {
-      const { data } = await api.post(`/posts/${postId}/share`);
+      const { data } = await api.post(`/posts/${postId}/share`, {
+        recipientId,
+        text,
+        toStory,
+        storyCaption,
+        visibility,
+      });
       return { postId, ...data };
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to share post');
@@ -460,6 +596,42 @@ const postsSlice = createSlice({
       })
       .addCase(fetchSavedPosts.fulfilled, (state, action) => {
         state.saved = action.payload;
+      })
+      .addCase(createCollection.fulfilled, (state, action) => {
+        state.saved.collections = action.payload;
+      })
+      .addCase(updateCollection.fulfilled, (state, action) => {
+        state.saved.collections = action.payload;
+      })
+      .addCase(deleteCollection.fulfilled, (state, action) => {
+        state.saved.collections = action.payload;
+      })
+      .addCase(createHighlight.fulfilled, (state, action) => {
+        state.profile.highlights = [...(state.profile.highlights || []), action.payload];
+      })
+      .addCase(deleteHighlight.fulfilled, (state, action) => {
+        state.profile.highlights = action.payload;
+      })
+      .addCase(fetchSettings.fulfilled, (state, action) => {
+        state.settings = action.payload;
+      })
+      .addCase(updatePrivacySettings.fulfilled, (state, action) => {
+        state.settings = state.settings ? { ...state.settings, ...action.payload } : action.payload;
+        if (state.profile.user?._id === action.payload._id) {
+          state.profile.user = action.payload;
+        }
+      })
+      .addCase(updateUserPreferenceList.fulfilled, (state, action) => {
+        if (!state.settings) return;
+        const map = {
+          blocked: 'blockedUsers',
+          restricted: 'restrictedUsers',
+          pinned: 'pinnedConversations',
+        };
+        const key = map[action.payload.type];
+        if (key && action.payload[key]) {
+          state.settings[key] = action.payload[key];
+        }
       })
       .addCase(createPost.pending, (state) => {
         state.createStatus = 'loading';
@@ -580,6 +752,11 @@ const postsSlice = createSlice({
           user._id === action.payload.user?._id ? { ...user, ...action.payload.user } : user
         );
       })
+      .addCase(removeFollower.fulfilled, (state, action) => {
+        if (state.profile.user?._id === action.payload.user?._id) {
+          state.profile.user = action.payload.user;
+        }
+      })
       .addCase(updateProfile.pending, (state) => {
         state.profileStatus = 'loading';
       })
@@ -615,6 +792,13 @@ const postsSlice = createSlice({
             sharesCount: (post.stats?.sharesCount || 0) + 1,
           },
         }));
+
+        if (action.payload.story) {
+          state.stories = [
+            action.payload.story,
+            ...state.stories.filter((story) => story._id !== action.payload.story._id),
+          ];
+        }
       })
       .addMatcher(
         (action) => action.type.startsWith('posts/') && action.type.endsWith('/rejected'),

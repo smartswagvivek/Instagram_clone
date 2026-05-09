@@ -13,9 +13,10 @@ const initialState = {
 
 export const fetchConversations = createAsyncThunk(
   'messages/fetchConversations',
-  async (_, { rejectWithValue }) => {
+  async (query = '', { rejectWithValue }) => {
     try {
-      const { data } = await api.get('/messages/conversations');
+      const suffix = query ? `?q=${encodeURIComponent(query)}` : '';
+      const { data } = await api.get(`/messages/conversations${suffix}`);
       return data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to load conversations');
@@ -37,12 +38,48 @@ export const fetchConversation = createAsyncThunk(
 
 export const sendMessage = createAsyncThunk(
   'messages/sendMessage',
-  async ({ recipientId, text }, { rejectWithValue }) => {
+  async ({ recipientId, text, replyToId, sharedPostId }, { rejectWithValue }) => {
     try {
-      const { data } = await api.post('/messages/send', { recipientId, text });
+      const { data } = await api.post('/messages/send', { recipientId, text, replyToId, sharedPostId });
       return data.data;
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to send message');
+    }
+  }
+);
+
+export const editMessage = createAsyncThunk(
+  'messages/editMessage',
+  async ({ messageId, text, userId }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.put(`/messages/${messageId}`, { text });
+      return { userId, message: data };
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to edit message');
+    }
+  }
+);
+
+export const reactToMessage = createAsyncThunk(
+  'messages/reactToMessage',
+  async ({ messageId, emoji, userId }, { rejectWithValue }) => {
+    try {
+      const { data } = await api.post(`/messages/${messageId}/reaction`, { emoji });
+      return { userId, message: data };
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to react to message');
+    }
+  }
+);
+
+export const unsendMessage = createAsyncThunk(
+  'messages/unsendMessage',
+  async ({ messageId, userId }, { rejectWithValue }) => {
+    try {
+      await api.delete(`/messages/${messageId}`);
+      return { messageId, userId };
+    } catch (error) {
+      return rejectWithValue(error.response?.data?.message || 'Failed to unsend message');
     }
   }
 );
@@ -51,6 +88,9 @@ const messagesSlice = createSlice({
   name: 'messages',
   initialState,
   reducers: {
+    resetMessagesState() {
+      return initialState;
+    },
     setActiveUser(state, action) {
       state.activeUserId = action.payload;
     },
@@ -66,6 +106,13 @@ const messagesSlice = createSlice({
         ...(state.messagesByUser[otherUserId] || []),
         action.payload,
       ];
+    },
+    mergeMessageUpdate(state, action) {
+      Object.keys(state.messagesByUser).forEach((userId) => {
+        state.messagesByUser[userId] = state.messagesByUser[userId].map((message) =>
+          message._id === action.payload._id ? action.payload : message
+        );
+      });
     },
   },
   extraReducers: (builder) => {
@@ -87,6 +134,24 @@ const messagesSlice = createSlice({
           action.payload,
         ];
       })
+      .addCase(editMessage.fulfilled, (state, action) => {
+        state.messagesByUser[action.payload.userId] = (state.messagesByUser[action.payload.userId] || []).map(
+          (message) => (message._id === action.payload.message._id ? action.payload.message : message)
+        );
+      })
+      .addCase(reactToMessage.fulfilled, (state, action) => {
+        state.messagesByUser[action.payload.userId] = (state.messagesByUser[action.payload.userId] || []).map(
+          (message) => (message._id === action.payload.message._id ? action.payload.message : message)
+        );
+      })
+      .addCase(unsendMessage.fulfilled, (state, action) => {
+        state.messagesByUser[action.payload.userId] = (state.messagesByUser[action.payload.userId] || []).map(
+          (message) =>
+            message._id === action.payload.messageId
+              ? { ...message, text: '', media: [], reactions: [], isUnsent: true, isDeleted: true }
+              : message
+        );
+      })
       .addMatcher(
         (action) => action.type.startsWith('messages/') && action.type.endsWith('/rejected'),
         (state, action) => {
@@ -97,5 +162,6 @@ const messagesSlice = createSlice({
   },
 });
 
-export const { appendIncomingMessage, setActiveUser, setTypingState } = messagesSlice.actions;
+export const { appendIncomingMessage, mergeMessageUpdate, resetMessagesState, setActiveUser, setTypingState } =
+  messagesSlice.actions;
 export default messagesSlice.reducer;

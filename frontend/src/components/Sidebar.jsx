@@ -7,6 +7,7 @@ import {
   MessageCircle,
   PlusSquare,
   ShieldCheck,
+  Settings,
   User,
 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
@@ -23,6 +24,7 @@ const links = [
   { to: '/notifications', label: 'Notifications', icon: Heart },
   { to: '/saved', label: 'Saved', icon: Bookmark },
   { to: '/profile', label: 'Profile', icon: User },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 const Sidebar = () => {

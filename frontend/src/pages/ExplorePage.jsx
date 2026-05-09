@@ -19,6 +19,8 @@ const ExplorePage = () => {
   const { explore, reels, userSearchResults } = useSelector((state) => state.posts);
   const authUser = useSelector((state) => state.auth.user);
   const [query, setQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState('all');
+  const [pendingFollowUserIds, setPendingFollowUserIds] = useState([]);
 
   useEffect(() => {
     dispatch(resetExplore());
@@ -36,14 +38,16 @@ const ExplorePage = () => {
         return;
       }
 
-      dispatch(fetchExplorePosts({ page: 1, q: nextQuery }));
+      dispatch(fetchExplorePosts({ page: 1, q: nextQuery, filter: searchFilter }));
       dispatch(searchUsers(nextQuery));
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [dispatch, query]);
+  }, [dispatch, query, searchFilter]);
 
   const handleFollowToggle = async (targetUserId) => {
+    if (pendingFollowUserIds.includes(targetUserId)) return;
+
     const isFollowing = (authUser?.following || []).some(
       (entry) => String(entry?._id || entry) === String(targetUserId)
     );
@@ -51,12 +55,35 @@ const ExplorePage = () => {
       (entry) => String(entry?._id || entry) === String(targetUserId)
     );
 
+    const optimisticFollowing = isFollowing
+      ? (authUser?.following || []).filter(
+          (entry) => String(entry?._id || entry) !== String(targetUserId)
+        )
+      : [...(authUser?.following || []), targetUserId];
+    const optimisticFollowRequestsSent =
+      isFollowing || isRequested
+        ? (authUser?.followRequestsSent || []).filter(
+            (entry) => String(entry?._id || entry) !== String(targetUserId)
+          )
+        : authUser?.followRequestsSent || [];
+
+    setPendingFollowUserIds((current) => [...current, targetUserId]);
+    dispatch(
+      setAuthenticatedUser({
+        ...authUser,
+        following: optimisticFollowing,
+        followRequestsSent: optimisticFollowRequestsSent,
+      })
+    );
+
     const result = await dispatch(
       isFollowing || isRequested ? unfollowUser(targetUserId) : followUser(targetUserId)
     );
 
     if (result.error) {
+      dispatch(setAuthenticatedUser(authUser));
       dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update follow.' }));
+      setPendingFollowUserIds((current) => current.filter((id) => id !== targetUserId));
       return;
     }
 
@@ -82,6 +109,7 @@ const ExplorePage = () => {
         followRequestsSent: nextFollowRequestsSent,
       })
     );
+    setPendingFollowUserIds((current) => current.filter((id) => id !== targetUserId));
     dispatch(
       showToast({
         tone: 'success',
@@ -113,6 +141,23 @@ const ExplorePage = () => {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-3">
+        {['all', 'posts', 'reels'].map((filter) => (
+          <button
+            key={filter}
+            type="button"
+            onClick={() => setSearchFilter(filter)}
+            className={`rounded-full px-4 py-2 text-sm font-semibold ${
+              searchFilter === filter
+                ? 'bg-[#262626] text-white dark:bg-white dark:text-black'
+                : 'border border-[#dbdbdb] dark:border-[#262626]'
+            }`}
+          >
+            {filter[0].toUpperCase() + filter.slice(1)}
+          </button>
+        ))}
       </div>
 
       {query.trim() && (
@@ -170,6 +215,7 @@ const ExplorePage = () => {
                     <button
                       type="button"
                       onClick={() => handleFollowToggle(user._id)}
+                      disabled={pendingFollowUserIds.includes(user._id)}
                       className={
                         isFollowing || isRequested
                           ? 'rounded-lg bg-[#efefef] px-4 py-2 text-sm font-semibold dark:bg-[#262626]'
@@ -197,13 +243,26 @@ const ExplorePage = () => {
 
       <section className="grid grid-cols-3 gap-1">
         {explore.map((post) => (
-          <Link
-            key={post._id}
-            to={`/profile/${post.author?.username || post.author?._id}`}
-            className="relative aspect-square overflow-hidden bg-[#fafafa] dark:bg-[#121212]"
-          >
+          <div key={post._id} className="group relative aspect-square overflow-hidden bg-[#fafafa] dark:bg-[#121212]">
             <img src={post.media?.[0]?.url} alt={post.caption} className="h-full w-full object-cover" />
-          </Link>
+            <div className="absolute inset-0 hidden bg-black/45 p-4 text-white group-hover:flex">
+              <div className="mt-auto">
+                <Link to={`/profile/${post.author?.username || post.author?._id}`} className="text-sm font-semibold">
+                  @{post.author?.username}
+                </Link>
+                {post.hashtags?.[0] && (
+                  <Link to={`/explore/hashtag/${post.hashtags[0]}`} className="mt-2 block text-xs">
+                    #{post.hashtags[0]}
+                  </Link>
+                )}
+                {post.location && (
+                  <Link to={`/explore/location/${encodeURIComponent(post.location)}`} className="mt-1 block text-xs">
+                    {post.location}
+                  </Link>
+                )}
+              </div>
+            </div>
+          </div>
         ))}
       </section>
     </div>

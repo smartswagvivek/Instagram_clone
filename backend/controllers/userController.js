@@ -1,5 +1,8 @@
+import bcrypt from 'bcryptjs';
+
 import User from '../models/User.js';
 import Post from '../models/Post.js';
+import Story from '../models/Story.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { uploadMediaFiles } from '../services/mediaService.js';
 import { sendActivityEmail } from '../services/mailService.js';
@@ -9,6 +12,11 @@ const DEFAULT_AVATAR_URL =
   'https://ui-avatars.com/api/?name=Instagram+User&background=f2f2f2&color=262626&bold=true&size=256';
 
 const escapeRegex = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const postAuthorPopulate = {
+  path: 'author',
+  select: 'username fullName profilePicture isVerified',
+};
 
 const getRelationshipState = (viewer, profileUser) => {
   const isSelf = viewer && String(viewer._id) === String(profileUser._id);
@@ -36,10 +44,92 @@ const populateRelationshipFields = async (queryOrDocument) => {
     { path: 'following', select: 'username fullName profilePicture' },
     { path: 'followRequestsReceived', select: 'username fullName profilePicture isPrivate' },
     { path: 'followRequestsSent', select: 'username fullName profilePicture isPrivate' },
+    { path: 'closeFriends', select: 'username fullName profilePicture' },
+    { path: 'blockedUsers', select: 'username fullName profilePicture' },
+    { path: 'restrictedUsers', select: 'username fullName profilePicture' },
   ]);
 
   return user;
 };
+
+const ensureAllPostsCollection = (user) => {
+  if (!user.savedCollections.some((collection) => collection.name.toLowerCase() === 'all posts')) {
+    user.savedCollections.unshift({ name: 'All Posts', posts: [...user.savedPosts] });
+  }
+};
+
+const buildProfilePayload = async (profileUser, viewer) => {
+  const relationship = getRelationshipState(viewer, profileUser);
+  const profileQuery = relationship.canViewPosts
+    ? { author: profileUser._id }
+    : { _id: null };
+
+  const [posts, reels, taggedPosts, archivedPosts, activeStories] = await Promise.all([
+    Post.find({ ...profileQuery, isArchived: false, isReel: { $ne: true } })
+      .populate(postAuthorPopulate)
+      .sort({ createdAt: -1 })
+      .limit(24),
+    Post.find({ ...profileQuery, isArchived: false, isReel: true })
+      .populate(postAuthorPopulate)
+      .sort({ createdAt: -1 })
+      .limit(24),
+    Post.find({
+      ...(relationship.canViewPosts ? {} : { _id: null }),
+      mentions: profileUser._id,
+      isArchived: false,
+    })
+      .populate(postAuthorPopulate)
+      .sort({ createdAt: -1 })
+      .limit(24),
+    relationship.isSelf
+      ? Post.find({ author: profileUser._id, isArchived: true })
+          .populate(postAuthorPopulate)
+          .sort({ createdAt: -1 })
+          .limit(24)
+      : Promise.resolve([]),
+    Story.find({
+      author: profileUser._id,
+      expiresAt: { $gt: new Date() },
+    })
+      .populate('author', 'username fullName profilePicture')
+      .sort({ createdAt: -1 }),
+  ]);
+
+  return {
+    user: profileUser,
+    posts,
+    reels,
+    taggedPosts,
+    archivedPosts,
+    activeStories,
+    highlights: profileUser.storyHighlights || [],
+    ...relationship,
+  };
+};
+
+const normalizeBoolean = (value, fallback) => {
+  if (value === undefined) return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') return value === 'true';
+  return Boolean(value);
+};
+
+const populateSavedCollections = async (userId) =>
+  User.findById(userId)
+    .populate({
+      path: 'savedPosts',
+      populate: {
+        path: 'author',
+        select: 'username fullName profilePicture',
+      },
+    })
+    .populate({
+      path: 'savedCollections.posts',
+      populate: {
+        path: 'author',
+        select: 'username fullName profilePicture',
+      },
+    });
 
 export const getProfile = asyncHandler(async (req, res) => {
   const user = await populateRelationshipFields(User.findById(req.params.id));
@@ -50,16 +140,7 @@ export const getProfile = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const relationship = getRelationshipState(req.user, user);
-  const posts = relationship.canViewPosts
-    ? await Post.find({ author: user._id, isArchived: false }).sort({ createdAt: -1 }).limit(24)
-    : [];
-
-  res.json({
-    user,
-    posts,
-    ...relationship,
-  });
+  res.json(await buildProfilePayload(user, req.user));
 });
 
 export const getProfileByUsername = asyncHandler(async (req, res) => {
@@ -73,16 +154,7 @@ export const getProfileByUsername = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  const relationship = getRelationshipState(req.user, user);
-  const posts = relationship.canViewPosts
-    ? await Post.find({ author: user._id, isArchived: false }).sort({ createdAt: -1 })
-    : [];
-
-  res.json({
-    user,
-    posts,
-    ...relationship,
-  });
+  res.json(await buildProfilePayload(user, req.user));
 });
 
 export const updateProfile = asyncHandler(async (req, res) => {
@@ -126,6 +198,18 @@ export const updateProfile = asyncHandler(async (req, res) => {
   }
 
   Object.assign(user, payload);
+
+  if (req.body.accountSettings) {
+    user.accountSettings = {
+      ...user.accountSettings?.toObject?.(),
+      ...req.body.accountSettings,
+      notificationPreferences: {
+        ...user.accountSettings?.notificationPreferences?.toObject?.(),
+        ...(req.body.accountSettings.notificationPreferences || {}),
+      },
+    };
+  }
+
   await user.save();
 
   res.json({ message: 'Profile updated successfully', user });
@@ -181,6 +265,18 @@ export const followUser = asyncHandler(async (req, res) => {
   if (!targetUser) {
     const error = new Error('User not found');
     error.statusCode = 404;
+    throw error;
+  }
+
+  if ((currentUser.blockedUsers || []).some((item) => String(item) === String(targetUser._id))) {
+    const error = new Error('Unblock this user before following');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if ((targetUser.blockedUsers || []).some((item) => String(item) === String(currentUser._id))) {
+    const error = new Error('This account is unavailable');
+    error.statusCode = 403;
     throw error;
   }
 
@@ -293,6 +389,10 @@ export const unfollowUser = asyncHandler(async (req, res) => {
   targetUser.followers = targetUser.followers.filter(
     (item) => String(item) !== String(currentUser._id)
   );
+  currentUser.closeFriends = currentUser.closeFriends.filter((item) => String(item) !== req.params.id);
+  currentUser.pinnedConversations = currentUser.pinnedConversations.filter(
+    (item) => String(item) !== req.params.id
+  );
 
   await Promise.all([currentUser.save(), targetUser.save()]);
   await targetUser.populate('followers', 'username fullName profilePicture');
@@ -303,6 +403,33 @@ export const unfollowUser = asyncHandler(async (req, res) => {
     user: targetUser,
     status: 'none',
     followersCount: targetUser.followers.length,
+  });
+});
+
+export const removeFollower = asyncHandler(async (req, res) => {
+  const follower = await User.findById(req.params.id);
+  const currentUser = await User.findById(req.user._id);
+
+  if (!follower) {
+    const error = new Error('User not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  currentUser.followers = currentUser.followers.filter(
+    (item) => String(item) !== String(follower._id)
+  );
+  follower.following = follower.following.filter(
+    (item) => String(item) !== String(currentUser._id)
+  );
+
+  await Promise.all([currentUser.save(), follower.save()]);
+
+  const updatedUser = await populateRelationshipFields(User.findById(req.user._id));
+  res.json({
+    message: 'Follower removed successfully',
+    user: updatedUser,
+    removedUserId: follower._id,
   });
 });
 
@@ -325,20 +452,40 @@ export const acceptFollowRequest = asyncHandler(async (req, res) => {
     throw error;
   }
 
-  if (!(currentUser.followRequestsReceived || []).some((item) => String(item) === req.params.id)) {
+  const hasReceivedRequest = (currentUser.followRequestsReceived || []).some(
+    (item) => String(item?._id || item) === String(requestingUser._id)
+  );
+  const hasSentRequest = (requestingUser.followRequestsSent || []).some(
+    (item) => String(item?._id || item) === String(currentUser._id)
+  );
+  const alreadyFollower = (currentUser.followers || []).some(
+    (item) => String(item?._id || item) === String(requestingUser._id)
+  );
+
+  if (!hasReceivedRequest && !hasSentRequest && !alreadyFollower) {
     const error = new Error('Follow request not found');
     error.statusCode = 404;
     throw error;
   }
 
   currentUser.followRequestsReceived = currentUser.followRequestsReceived.filter(
-    (item) => String(item) !== req.params.id
+    (item) => String(item?._id || item) !== String(requestingUser._id)
   );
   requestingUser.followRequestsSent = requestingUser.followRequestsSent.filter(
-    (item) => String(item) !== String(currentUser._id)
+    (item) => String(item?._id || item) !== String(currentUser._id)
   );
-  currentUser.followers.push(requestingUser._id);
-  requestingUser.following.push(currentUser._id);
+
+  if (!alreadyFollower) {
+    currentUser.followers.push(requestingUser._id);
+  }
+
+  if (
+    !(requestingUser.following || []).some(
+      (item) => String(item?._id || item) === String(currentUser._id)
+    )
+  ) {
+    requestingUser.following.push(currentUser._id);
+  }
 
   await Promise.all([currentUser.save(), requestingUser.save()]);
 
@@ -369,10 +516,10 @@ export const rejectFollowRequest = asyncHandler(async (req, res) => {
   }
 
   currentUser.followRequestsReceived = currentUser.followRequestsReceived.filter(
-    (item) => String(item) !== req.params.id
+    (item) => String(item?._id || item) !== String(requestingUser._id)
   );
   requestingUser.followRequestsSent = requestingUser.followRequestsSent.filter(
-    (item) => String(item) !== String(currentUser._id)
+    (item) => String(item?._id || item) !== String(currentUser._id)
   );
 
   await Promise.all([currentUser.save(), requestingUser.save()]);
@@ -400,7 +547,7 @@ export const getSuggestions = asyncHandler(async (req, res) => {
   const users = await User.find({
     _id: {
       $ne: req.user._id,
-      $nin: [...req.user.following, ...(req.user.followRequestsSent || [])],
+      $nin: [...req.user.following, ...(req.user.followRequestsSent || []), ...(req.user.blockedUsers || [])],
     },
   })
     .sort({ followers: -1, createdAt: -1 })
@@ -411,24 +558,243 @@ export const getSuggestions = asyncHandler(async (req, res) => {
 });
 
 export const getSavedPosts = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id)
-    .populate({
-      path: 'savedPosts',
-      populate: {
-        path: 'author',
-        select: 'username fullName profilePicture',
-      },
-    })
-    .populate({
-      path: 'savedCollections.posts',
-      populate: {
-        path: 'author',
-        select: 'username fullName profilePicture',
-      },
-    });
+  const user = await populateSavedCollections(req.user._id);
+  ensureAllPostsCollection(user);
+  await user.save();
 
   res.json({
     savedPosts: user.savedPosts,
     collections: user.savedCollections,
   });
+});
+
+export const createSavedCollection = asyncHandler(async (req, res) => {
+  const name = req.body.name?.trim();
+  if (!name) {
+    const error = new Error('Collection name is required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await User.findById(req.user._id);
+  const exists = user.savedCollections.some((collection) => collection.name.toLowerCase() === name.toLowerCase());
+  if (exists) {
+    const error = new Error('Collection already exists');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  user.savedCollections.push({ name, posts: [] });
+  await user.save();
+
+  const updatedUser = await populateSavedCollections(req.user._id);
+  res.status(201).json({ collections: updatedUser.savedCollections });
+});
+
+export const updateSavedCollection = asyncHandler(async (req, res) => {
+  const name = req.body.name?.trim();
+  const user = await User.findById(req.user._id);
+  const collection = user.savedCollections.find(
+    (item) => item.name.toLowerCase() === req.params.name.toLowerCase()
+  );
+
+  if (!collection) {
+    const error = new Error('Collection not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (name) {
+    collection.name = name;
+  }
+
+  if (req.body.postIds) {
+    collection.posts = req.body.postIds;
+  }
+
+  await user.save();
+  const updatedUser = await populateSavedCollections(req.user._id);
+  res.json({ collections: updatedUser.savedCollections });
+});
+
+export const deleteSavedCollection = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  user.savedCollections = user.savedCollections.filter(
+    (item) => item.name.toLowerCase() !== req.params.name.toLowerCase() || item.name.toLowerCase() === 'all posts'
+  );
+  await user.save();
+  const updatedUser = await populateSavedCollections(req.user._id);
+  res.json({ collections: updatedUser.savedCollections });
+});
+
+export const createStoryHighlight = asyncHandler(async (req, res) => {
+  const title = req.body.title?.trim();
+  const storyIds = Array.isArray(req.body.storyIds) ? req.body.storyIds : [];
+
+  if (!title || storyIds.length === 0) {
+    const error = new Error('Highlight title and stories are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const stories = await Story.find({
+    _id: { $in: storyIds },
+    author: req.user._id,
+  }).sort({ createdAt: 1 });
+
+  if (stories.length === 0) {
+    const error = new Error('Stories not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const user = await User.findById(req.user._id);
+  const highlight = {
+    id: `highlight_${Date.now()}`,
+    title,
+    coverImage: stories[0].media?.url,
+    items: stories.map((story) => ({
+      storyId: story._id,
+      media: story.media,
+      caption: story.caption,
+      createdAt: story.createdAt,
+    })),
+  };
+
+  user.storyHighlights.push(highlight);
+  await user.save();
+
+  res.status(201).json({ highlight });
+});
+
+export const deleteStoryHighlight = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  user.storyHighlights = user.storyHighlights.filter((item) => item.id !== req.params.highlightId);
+  await user.save();
+  res.json({ highlights: user.storyHighlights });
+});
+
+export const updateStoryHighlight = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  const highlight = user.storyHighlights.find((item) => item.id === req.params.highlightId);
+
+  if (!highlight) {
+    const error = new Error('Highlight not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (req.body.title) {
+    highlight.title = req.body.title.trim();
+  }
+
+  if (req.body.coverImage) {
+    highlight.coverImage = req.body.coverImage;
+  }
+
+  await user.save();
+  res.json({ highlight });
+});
+
+export const updateCloseFriends = asyncHandler(async (req, res) => {
+  const friendIds = Array.isArray(req.body.friendIds) ? req.body.friendIds : [];
+  const user = await User.findById(req.user._id);
+  user.closeFriends = friendIds;
+  await user.save();
+  await user.populate('closeFriends', 'username fullName profilePicture');
+  res.json({ closeFriends: user.closeFriends });
+});
+
+export const getAccountSettings = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id).select(
+    'accountSettings blockedUsers restrictedUsers closeFriends pinnedConversations'
+  );
+  await user.populate([
+    { path: 'blockedUsers', select: 'username fullName profilePicture' },
+    { path: 'restrictedUsers', select: 'username fullName profilePicture' },
+    { path: 'closeFriends', select: 'username fullName profilePicture' },
+    { path: 'pinnedConversations', select: 'username fullName profilePicture' },
+  ]);
+  res.json(user);
+});
+
+export const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    const error = new Error('Current and new password are required');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const user = await User.findById(req.user._id).select('+password');
+  const matches = await user.matchPassword(currentPassword);
+  if (!matches) {
+    const error = new Error('Current password is incorrect');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.json({ message: 'Password updated successfully' });
+});
+
+export const updateUserListPreference = asyncHandler(async (req, res) => {
+  const { type } = req.params;
+  const { userId, action = 'add' } = req.body;
+  const user = await User.findById(req.user._id);
+
+  const listMap = {
+    blocked: 'blockedUsers',
+    restricted: 'restrictedUsers',
+    pinned: 'pinnedConversations',
+  };
+
+  const listName = listMap[type];
+  if (!listName) {
+    const error = new Error('Invalid preference type');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const currentList = user[listName] || [];
+  if (action === 'remove') {
+    user[listName] = currentList.filter((entry) => String(entry) !== String(userId));
+  } else if (!currentList.some((entry) => String(entry) === String(userId))) {
+    user[listName].push(userId);
+  }
+
+  await user.save();
+  await user.populate(listName, 'username fullName profilePicture');
+  res.json({ [listName]: user[listName] });
+});
+
+export const deactivateAccount = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  user.isActive = false;
+  await user.save();
+  res.json({ message: 'Account deactivated successfully' });
+});
+
+export const updatePrivacySettings = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  user.isPrivate = normalizeBoolean(req.body.isPrivate, user.isPrivate);
+  user.accountSettings = {
+    ...user.accountSettings?.toObject?.(),
+    allowMessageRequestsFromEveryone: normalizeBoolean(
+      req.body.allowMessageRequestsFromEveryone,
+      user.accountSettings?.allowMessageRequestsFromEveryone
+    ),
+    showActivityStatus: normalizeBoolean(
+      req.body.showActivityStatus,
+      user.accountSettings?.showActivityStatus
+    ),
+    notificationPreferences: {
+      ...user.accountSettings?.notificationPreferences?.toObject?.(),
+      ...(req.body.notificationPreferences || {}),
+    },
+  };
+  await user.save();
+  res.json({ user });
 });

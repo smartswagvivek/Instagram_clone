@@ -37,14 +37,14 @@ const LoginPage = () => {
               <div className="absolute left-0 top-6 h-[560px] w-[270px] rounded-[42px] border border-[#dbdbdb] bg-black p-3 shadow-xl">
                 <img
                   src={previews[0]}
-                  alt="Instagram mobile preview"
+                  alt="Instagraam mobile preview"
                   className="h-full w-full rounded-[32px] object-cover"
                 />
               </div>
               <div className="absolute right-8 top-0 h-[590px] w-[280px] rounded-[42px] border border-[#dbdbdb] bg-black p-3 shadow-2xl">
                 <img
                   src={previews[1]}
-                  alt="Instagram mobile preview"
+                  alt="Instagraam mobile preview"
                   className="h-full w-full rounded-[32px] object-cover"
                 />
               </div>

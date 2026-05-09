@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: instagram-clone-backend
+    name: instagraam-clone-backend
     runtime: node
     buildCommand: npm ci
     startCommand: npm start

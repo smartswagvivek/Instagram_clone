@@ -1,17 +1,22 @@
-import { Bookmark, Heart, MessageCircle, Send, Sparkles, Trash2 } from 'lucide-react';
-import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Bookmark, Heart, MessageCircle, Send, Sparkles, Trash2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 
 import CommentSection from './CommentSection';
-import { deletePost, likePost, savePost } from '../redux/slices/postsSlice';
+import { deletePost, fetchStories, likePost, savePost, sharePost } from '../redux/slices/postsSlice';
 import { showToast } from '../redux/slices/uiSlice';
 
 const PostCard = ({ post, compact = false }) => {
-  const navigate = useNavigate();
   const dispatch = useDispatch();
   const user = useSelector((state) => state.auth.user);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [optimisticLiked, setOptimisticLiked] = useState(false);
+  const [optimisticSaved, setOptimisticSaved] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [sharePending, setSharePending] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [shareMessage, setShareMessage] = useState('');
   const liked = (post.likes || []).some(
     (entry) => String(entry?._id || entry) === String(user?._id)
   );
@@ -21,6 +26,51 @@ const PostCard = ({ post, compact = false }) => {
   const media = post.media?.[0];
   const canDelete =
     String(post.author?._id || post.author) === String(user?._id) || user?.role === 'admin';
+  const displayedLiked = pendingAction === 'like' ? optimisticLiked : liked;
+  const displayedSaved = pendingAction === 'save' ? optimisticSaved : saved;
+  const displayedLikesCount =
+    (post.likes?.length || 0) + (displayedLiked === liked ? 0 : displayedLiked ? 1 : -1);
+  const followingUsers = (user?.following || []).filter((entry) => entry && typeof entry === 'object');
+
+  useEffect(() => {
+    setOptimisticLiked(liked);
+  }, [liked]);
+
+  useEffect(() => {
+    setOptimisticSaved(saved);
+  }, [saved]);
+
+  const handleLikeToggle = async () => {
+    if (pendingAction === 'like') return;
+
+    const nextLiked = !displayedLiked;
+    setPendingAction('like');
+    setOptimisticLiked(nextLiked);
+
+    const result = await dispatch(likePost({ postId: post._id, liked: displayedLiked }));
+    if (result.error) {
+      setOptimisticLiked(displayedLiked);
+      dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update like.' }));
+    }
+
+    setPendingAction((current) => (current === 'like' ? null : current));
+  };
+
+  const handleSaveToggle = async () => {
+    if (pendingAction === 'save') return;
+
+    const nextSaved = !displayedSaved;
+    setPendingAction('save');
+    setOptimisticSaved(nextSaved);
+
+    const result = await dispatch(savePost({ postId: post._id, saved: displayedSaved }));
+    if (result.error) {
+      setOptimisticSaved(displayedSaved);
+      dispatch(showToast({ tone: 'error', message: result.payload || 'Unable to update save.' }));
+    }
+
+    setPendingAction((current) => (current === 'save' ? null : current));
+  };
 
 
 
@@ -37,12 +87,54 @@ const PostCard = ({ post, compact = false }) => {
     );
   };
 
-  const handleDirectMessage = () => {
-    if (!post.author?._id) {
-      dispatch(showToast({ tone: 'error', message: 'Unable to open messages.' }));
-      return;
+  const handleShareToUser = async (recipientId) => {
+    const result = await dispatch(
+      sharePost({
+        postId: post._id,
+        recipientId,
+        text: shareMessage,
+      })
+    );
+
+    dispatch(
+      showToast({
+        tone: result.error ? 'error' : 'success',
+        message: result.error ? result.payload || 'Unable to share post.' : 'Post shared successfully.',
+      })
+    );
+
+    if (!result.error) {
+      setIsShareOpen(false);
+      setShareMessage('');
     }
-    navigate(`/messages?user=${post.author._id}`);
+  };
+
+  const handleShareToStory = async () => {
+    if (sharePending) return;
+
+    setSharePending(true);
+    const result = await dispatch(
+      sharePost({
+        postId: post._id,
+        toStory: true,
+        storyCaption: shareMessage,
+      })
+    );
+
+    dispatch(
+      showToast({
+        tone: result.error ? 'error' : 'success',
+        message: result.error ? result.payload || 'Unable to share to story.' : 'Shared to your story.',
+      })
+    );
+
+    if (!result.error) {
+      dispatch(fetchStories());
+      setIsShareOpen(false);
+      setShareMessage('');
+    }
+
+    setSharePending(false);
   };
 
   return (
@@ -92,11 +184,11 @@ const PostCard = ({ post, compact = false }) => {
       </div>
 
       {media && (
-        <div
+      <div
           className="relative"
           onDoubleClick={() => {
-            if (!liked) {
-              dispatch(likePost({ postId: post._id, liked }));
+            if (!displayedLiked && pendingAction !== 'like') {
+              handleLikeToggle();
             }
           }}
         >
@@ -126,24 +218,24 @@ const PostCard = ({ post, compact = false }) => {
           <div className="flex items-center gap-4">
             <button
               type="button"
-              onClick={() => dispatch(likePost({ postId: post._id, liked }))}
-              className={liked ? 'text-[#ed4956]' : ''}
+              onClick={handleLikeToggle}
+              className={displayedLiked ? 'text-[#ed4956]' : ''}
             >
-              <Heart size={24} fill={liked ? 'currentColor' : 'none'} />
+              <Heart size={24} fill={displayedLiked ? 'currentColor' : 'none'} />
             </button>
             <button type="button" onClick={() => setCommentsOpen((value) => !value)}>
               <MessageCircle size={24} />
             </button>
-            <button type="button" onClick={handleDirectMessage}>
+            <button type="button" onClick={() => setIsShareOpen(true)}>
               <Send size={24} />
             </button>
           </div>
-          <button type="button" onClick={() => dispatch(savePost({ postId: post._id, saved }))}>
-            <Bookmark size={24} fill={saved ? 'currentColor' : 'none'} />
+          <button type="button" onClick={handleSaveToggle}>
+            <Bookmark size={24} fill={displayedSaved ? 'currentColor' : 'none'} />
           </button>
         </div>
 
-        <div className="text-sm font-semibold">{post.likes?.length || 0} likes</div>
+        <div className="text-sm font-semibold">{displayedLikesCount} likes</div>
 
         <div className="space-y-1 text-sm">
           <p className="leading-[18px]">
@@ -179,6 +271,76 @@ const PostCard = ({ post, compact = false }) => {
 
         <CommentSection postId={post._id} isOpen={commentsOpen} />
       </div>
+
+      {isShareOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 px-4">
+          <div className="ig-surface w-full max-w-md rounded-3xl bg-white p-0 dark:bg-black">
+            <div className="flex items-center justify-between border-b border-[#dbdbdb] px-5 py-4 dark:border-[#262626]">
+              <div>
+                <h3 className="text-base font-semibold">Share post</h3>
+                <p className="mt-1 text-xs text-[#8e8e8e] dark:text-[#a8a8a8]">
+                  Send in chat or add it to your story
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsShareOpen(false)}
+                className="rounded-full p-2 text-[#8e8e8e] transition hover:bg-[#f5f5f5] dark:hover:bg-[#121212]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="px-5 py-4">
+              <textarea
+                rows={3}
+                value={shareMessage}
+                onChange={(event) => setShareMessage(event.target.value)}
+                placeholder="Write a message or story caption"
+                className="ig-input"
+              />
+
+              <button
+                type="button"
+                onClick={handleShareToStory}
+                disabled={sharePending}
+                className="ig-button-primary mt-4 w-full disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {sharePending ? 'Sharing...' : 'Share to story'}
+              </button>
+
+              <div className="mt-5 space-y-3">
+                {followingUsers.length === 0 ? (
+                  <p className="text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
+                    Follow people to share posts directly in messages.
+                  </p>
+                ) : (
+                  followingUsers.map((entry) => (
+                    <button
+                      key={entry._id}
+                      type="button"
+                      onClick={() => handleShareToUser(entry._id)}
+                      className="flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-[#f5f5f5] dark:hover:bg-[#121212]"
+                    >
+                      <img
+                        src={entry.profilePicture?.url}
+                        alt={entry.username}
+                        className="h-12 w-12 rounded-full object-cover"
+                      />
+                      <div>
+                        <p className="text-sm font-semibold">{entry.username}</p>
+                        <p className="text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
+                          {entry.fullName || 'Instagraam user'}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </article>
   );
 };

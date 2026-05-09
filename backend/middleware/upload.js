@@ -3,11 +3,11 @@ import multer from 'multer';
 const storage = multer.memoryStorage();
 
 const fileFilter = (_req, file, cb) => {
-  const allowed = ['image/', 'video/'];
+  const allowed = ['image/', 'video/', 'audio/'];
   const accepted = allowed.some((prefix) => file.mimetype.startsWith(prefix));
 
   if (!accepted) {
-    cb(new Error('Only image and video uploads are supported.'));
+    cb(new Error('Only image, video, and audio uploads are supported.'));
     return;
   }
 
