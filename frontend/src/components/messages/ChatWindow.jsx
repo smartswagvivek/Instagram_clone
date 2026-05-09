@@ -1,5 +1,5 @@
 import { CornerUpLeft, Pencil, Phone, Send, SmilePlus, Trash2, Video } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 const REACTIONS = ['\u2764\uFE0F', '\uD83D\uDD25', '\uD83D\uDE02', '\uD83D\uDC4F', '\uD83D\uDE0D'];
@@ -22,21 +22,49 @@ const ChatWindow = ({
   const [replyTarget, setReplyTarget] = useState(null);
   const [editingTargetId, setEditingTargetId] = useState(null);
   const messageListRef = useRef(null);
+  const bottomRef = useRef(null);
+  const scrollFrameRef = useRef(null);
   const messages = useMemo(() => conversation || [], [conversation]);
+  const lastMessageId = messages[messages.length - 1]?._id;
+  const lastMessageUpdatedAt = messages[messages.length - 1]?.updatedAt;
 
   useEffect(() => {
     setIsTyping(typing);
   }, [typing]);
 
-  useEffect(() => {
+  const scrollToBottom = (behavior = 'smooth') => {
     const messageList = messageListRef.current;
     if (!messageList) return;
 
-    messageList.scrollTo({
-      top: messageList.scrollHeight,
-      behavior: 'smooth',
+    if (scrollFrameRef.current) {
+      window.cancelAnimationFrame(scrollFrameRef.current);
+    }
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      messageList.scrollTop = messageList.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: 'end', behavior });
+      scrollFrameRef.current = null;
     });
-  }, [messages.length, typing]);
+  };
+
+  useLayoutEffect(() => {
+    scrollToBottom('auto');
+  }, [activeUser?._id, messages.length, lastMessageId, lastMessageUpdatedAt]);
+
+  useEffect(() => {
+    if (typing) {
+      scrollToBottom('smooth');
+    }
+  }, [typing]);
+
+  useEffect(
+    () => () => {
+      if (scrollFrameRef.current) {
+        window.cancelAnimationFrame(scrollFrameRef.current);
+      }
+    },
+    []
+  );
 
   const submit = (event) => {
     event.preventDefault();
@@ -167,6 +195,7 @@ const ChatWindow = ({
                           src={message.sharedPost.media?.[0]?.url}
                           alt={message.sharedPost.caption}
                           className="h-32 w-full object-cover"
+                          onLoad={() => scrollToBottom('auto')}
                         />
                         <div className="px-3 py-2 text-xs">
                           <p className="font-semibold">@{message.sharedPost.author?.username}</p>
@@ -272,6 +301,7 @@ const ChatWindow = ({
             </div>
           </div>
         )}
+        <div ref={bottomRef} />
       </div>
 
       <form onSubmit={submit} className="shrink-0 border-t border-[#dbdbdb] bg-white p-4 dark:border-[#262626] dark:bg-black">

@@ -41,7 +41,7 @@ router.get(
 router.post(
   '/',
   protect,
-  upload.array('media', 4),
+  upload.array('media'),
   [body('recipientId').isMongoId(), body('text').optional({ checkFalsy: true }).trim()],
   validate,
   sendMessage
@@ -49,7 +49,7 @@ router.post(
 router.post(
   '/send',
   protect,
-  upload.array('media', 4),
+  upload.array('media'),
   [body('recipientId').isMongoId(), body('text').optional({ checkFalsy: true }).trim()],
   validate,
   sendMessage

@@ -23,6 +23,26 @@ import { connectSocket, getSocket } from '../services/socket';
 const EMPTY_CALL = { status: 'idle', callId: null, callType: null, peerUser: null, peerId: null, isCaller: false };
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 const getEntityId = (value) => String(value?._id || value?.id || value || '');
+const waitForSocketConnection = (socket) =>
+  new Promise((resolve, reject) => {
+    if (socket.connected) {
+      resolve();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      socket.off('connect', handleConnect);
+      reject(new Error('Unable to connect call right now.'));
+    }, 5000);
+
+    const handleConnect = () => {
+      window.clearTimeout(timeoutId);
+      resolve();
+    };
+
+    socket.once('connect', handleConnect);
+    socket.connect();
+  });
 
 const MessagesPage = () => {
   const dispatch = useDispatch();
@@ -34,6 +54,7 @@ const MessagesPage = () => {
   const previousUserIdRef = useRef(null);
   const callRef = useRef(EMPTY_CALL);
   const peerConnectionRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -195,6 +216,11 @@ const MessagesPage = () => {
       endCall(false);
       dispatch(showToast({ tone: 'default', message: 'Call declined.' }));
     };
+    const onCallUnavailable = ({ callId }) => {
+      if (callRef.current.callId !== callId) return;
+      endCall(false);
+      dispatch(showToast({ tone: 'error', message: 'User is not available for calls right now.' }));
+    };
     const onCallEnded = ({ callId }) => {
       if (callRef.current.callId !== callId) return;
       endCall(false);
@@ -207,6 +233,7 @@ const MessagesPage = () => {
     socket.on('call:incoming', onIncomingCall);
     socket.on('call:accepted', onCallAccepted);
     socket.on('call:declined', onCallDeclined);
+    socket.on('call:unavailable', onCallUnavailable);
     socket.on('call:ended', onCallEnded);
     socket.on('call:signal', onCallSignal);
 
@@ -216,6 +243,7 @@ const MessagesPage = () => {
       socket.off('call:incoming', onIncomingCall);
       socket.off('call:accepted', onCallAccepted);
       socket.off('call:declined', onCallDeclined);
+      socket.off('call:unavailable', onCallUnavailable);
       socket.off('call:ended', onCallEnded);
       socket.off('call:signal', onCallSignal);
     };
@@ -335,6 +363,15 @@ const MessagesPage = () => {
     return peerConnection;
   };
 
+  const flushPendingIceCandidates = async (peerConnection) => {
+    const pendingCandidates = pendingIceCandidatesRef.current;
+    pendingIceCandidatesRef.current = [];
+
+    await Promise.all(
+      pendingCandidates.map((candidate) => peerConnection.addIceCandidate(new RTCIceCandidate(candidate)))
+    );
+  };
+
   const startCall = async (callType) => {
     if (!activeUser?._id || callRef.current.status !== 'idle') return;
 
@@ -346,6 +383,7 @@ const MessagesPage = () => {
 
     const callId = `${authUser?._id}_${activeUser._id}_${Date.now()}`;
     try {
+      await waitForSocketConnection(socket);
       await getCallMedia(callType);
       const nextCallState = {
         status: 'outgoing',
@@ -403,6 +441,7 @@ const MessagesPage = () => {
 
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    pendingIceCandidatesRef.current = [];
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     setLocalStream(null);
@@ -422,6 +461,7 @@ const MessagesPage = () => {
 
       if (signal.type === 'offer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        await flushPendingIceCandidates(peerConnection);
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         getSocket()?.emit('call:signal', {
@@ -433,10 +473,16 @@ const MessagesPage = () => {
 
       if (signal.type === 'answer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        await flushPendingIceCandidates(peerConnection);
         setCallState((current) => ({ ...current, status: 'active' }));
       }
 
       if (signal.type === 'candidate' && signal.candidate) {
+        if (!peerConnection.remoteDescription) {
+          pendingIceCandidatesRef.current.push(signal.candidate);
+          return;
+        }
+
         await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
       }
     } catch (error) {

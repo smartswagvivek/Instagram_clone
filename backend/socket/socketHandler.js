@@ -4,6 +4,25 @@ import User from '../models/User.js';
 
 const connectedUsers = new Map();
 
+const addConnectedSocket = (userId, socketId) => {
+  const sockets = connectedUsers.get(userId) || new Set();
+  sockets.add(socketId);
+  connectedUsers.set(userId, sockets);
+};
+
+const removeConnectedSocket = (userId, socketId) => {
+  const sockets = connectedUsers.get(userId);
+  if (!sockets) return false;
+
+  sockets.delete(socketId);
+  if (sockets.size === 0) {
+    connectedUsers.delete(userId);
+    return false;
+  }
+
+  return true;
+};
+
 const setupSocketIO = (io) => {
   io.use(async (socket, next) => {
     try {
@@ -27,7 +46,7 @@ const setupSocketIO = (io) => {
   });
 
   io.on('connection', async (socket) => {
-    connectedUsers.set(socket.userId, socket.id);
+    addConnectedSocket(socket.userId, socket.id);
     socket.join(socket.userId);
     await User.findByIdAndUpdate(socket.userId, { status: 'online' });
     io.emit('presence:update', { userId: socket.userId, status: 'online' });
@@ -45,7 +64,17 @@ const setupSocketIO = (io) => {
     });
 
     socket.on('call:invite', ({ recipientId, callId, callType }) => {
-      io.to(String(recipientId)).emit('call:incoming', {
+      const targetUserId = String(recipientId);
+
+      if (!connectedUsers.has(targetUserId)) {
+        socket.emit('call:unavailable', {
+          callId,
+          recipientId: targetUserId,
+        });
+        return;
+      }
+
+      io.to(targetUserId).emit('call:incoming', {
         callId,
         callType,
         fromUser: {
@@ -87,7 +116,9 @@ const setupSocketIO = (io) => {
     });
 
     socket.on('disconnect', async () => {
-      connectedUsers.delete(socket.userId);
+      const stillConnected = removeConnectedSocket(socket.userId, socket.id);
+      if (stillConnected) return;
+
       await User.findByIdAndUpdate(socket.userId, { status: 'offline' });
       io.emit('presence:update', { userId: socket.userId, status: 'offline' });
     });

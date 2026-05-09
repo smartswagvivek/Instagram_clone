@@ -20,7 +20,12 @@ export const connectSocket = (token) => {
     socketToken = null;
   }
 
-  if (socket?.connected) return socket;
+  if (socket) {
+    if (!socket.connected) {
+      socket.connect();
+    }
+    return socket;
+  }
 
   socketToken = token;
   socket = io(getSocketUrl(), {

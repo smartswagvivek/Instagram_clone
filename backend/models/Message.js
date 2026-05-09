@@ -32,7 +32,6 @@ const messageSchema = new mongoose.Schema(
     text: {
       type: String,
       trim: true,
-      maxlength: [2000, 'Message must not exceed 2000 characters'],
       default: '',
     },
     media: [

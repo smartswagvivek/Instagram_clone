@@ -21,6 +21,7 @@ const GlobalCallLayer = () => {
   const token = useSelector((state) => state.auth.accessToken);
   const callRef = useRef(EMPTY_CALL);
   const peerConnectionRef = useRef(null);
+  const pendingIceCandidatesRef = useRef([]);
   const localStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -72,6 +73,7 @@ const GlobalCallLayer = () => {
 
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    pendingIceCandidatesRef.current = [];
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     callRef.current = EMPTY_CALL;
@@ -120,6 +122,15 @@ const GlobalCallLayer = () => {
     return peerConnection;
   };
 
+  const flushPendingIceCandidates = async (peerConnection) => {
+    const pendingCandidates = pendingIceCandidatesRef.current;
+    pendingIceCandidatesRef.current = [];
+
+    await Promise.all(
+      pendingCandidates.map((candidate) => peerConnection.addIceCandidate(new RTCIceCandidate(candidate)))
+    );
+  };
+
   const handleCallSignal = async ({ callId, signal }) => {
     const currentCall = callRef.current;
     if (currentCall.callId !== callId || !signal) return;
@@ -129,6 +140,7 @@ const GlobalCallLayer = () => {
 
       if (signal.type === 'offer') {
         await peerConnection.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        await flushPendingIceCandidates(peerConnection);
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
         getSocket()?.emit('call:signal', {
@@ -139,6 +151,11 @@ const GlobalCallLayer = () => {
       }
 
       if (signal.type === 'candidate' && signal.candidate) {
+        if (!peerConnection.remoteDescription) {
+          pendingIceCandidatesRef.current.push(signal.candidate);
+          return;
+        }
+
         await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
       }
     } catch (error) {

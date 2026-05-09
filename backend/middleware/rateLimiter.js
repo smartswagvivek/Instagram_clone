@@ -7,7 +7,7 @@ const rateLimiter = rateLimit({
   message: 'Too many requests, please try again later',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.user?.role === 'admin',
+  skip: (req) => req.user?.role === 'admin' || req.path.startsWith('/api/messages'),
 });
 
 export const authLimiter = rateLimit({

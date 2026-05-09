@@ -130,16 +130,23 @@ export const sendMessage = asyncHandler(async (req, res) => {
 });
 
 export const getConversation = asyncHandler(async (req, res) => {
-  const { page, limit, skip } = getPagination(req.query.page, req.query.limit || 30);
+  const loadAllMessages = req.query.limit === 'all';
+  const { page, limit, skip } = loadAllMessages
+    ? { page: 1, limit: 0, skip: 0 }
+    : getPagination(req.query.page, req.query.limit || 30);
 
-  const messages = await Message.find({
+  const messageQuery = Message.find({
     ...getConversationQuery(req.user._id, req.params.userId),
     isDeleted: false,
   })
     .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit)
     .populate(messagePopulate);
+
+  if (!loadAllMessages) {
+    messageQuery.skip(skip).limit(limit);
+  }
+
+  const messages = await messageQuery;
 
   await Message.updateMany(
     {
@@ -154,7 +161,7 @@ export const getConversation = asyncHandler(async (req, res) => {
     }
   );
 
-  res.json({ page, messages: messages.reverse() });
+  res.json({ page, messages: messages.reverse(), hasMore: !loadAllMessages && messages.length === limit });
 });
 
 export const getConversations = asyncHandler(async (req, res) => {

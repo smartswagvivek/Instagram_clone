@@ -80,7 +80,7 @@ export const fetchConversation = createAsyncThunk(
   'messages/fetchConversation',
   async (userId, { rejectWithValue }) => {
     try {
-      const { data } = await api.get(`/messages/conversation/${userId}?limit=50`);
+      const { data } = await api.get(`/messages/conversation/${userId}?limit=all`);
       return { userId, messages: data.messages || [] };
     } catch (error) {
       return rejectWithValue(error.response?.data?.message || 'Failed to load conversation');
