@@ -30,8 +30,18 @@ const links = [
 const Sidebar = () => {
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
+  const messageUnreadCount = useSelector((state) => state.messages.unreadCount);
+  const notificationUnreadCount = useSelector((state) => state.notifications.unreadCount);
   const navItemClass = ({ isActive }) =>
     `ig-nav-item ${isActive ? 'ig-nav-item-active' : ''}`;
+
+  const getBadgeCount = (to) => {
+    if (to === '/messages') return messageUnreadCount;
+    if (to === '/notifications') return notificationUnreadCount;
+    return 0;
+  };
+
+  const formatBadgeCount = (count) => (count > 99 ? '99+' : count);
 
   return (
     <aside className="fixed hidden h-screen w-[250px] border-r border-[#dbdbdb] bg-white px-3 py-6 dark:border-[#262626] dark:bg-black lg:block">
@@ -45,11 +55,18 @@ const Sidebar = () => {
             <NavLink key={to} to={to} className={navItemClass}>
               {({ isActive }) => (
                 <>
-                  <Icon
-                    size={24}
-                    strokeWidth={isActive ? 2.7 : 2.1}
-                    className={isActive ? 'scale-[1.02]' : ''}
-                  />
+                  <span className="relative inline-flex">
+                    <Icon
+                      size={24}
+                      strokeWidth={isActive ? 2.7 : 2.1}
+                      className={isActive ? 'scale-[1.02]' : ''}
+                    />
+                    {Number(getBadgeCount(to)) > 0 && (
+                      <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#ff3040] px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-black">
+                        <span>{formatBadgeCount(Number(getBadgeCount(to)))}</span>
+                      </span>
+                    )}
+                  </span>
                   <span className="truncate">{label}</span>
                 </>
               )}

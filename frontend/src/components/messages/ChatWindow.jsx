@@ -1,7 +1,9 @@
 import { CornerUpLeft, Pencil, Phone, Send, SmilePlus, Trash2, Video } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
 const REACTIONS = ['\u2764\uFE0F', '\uD83D\uDD25', '\uD83D\uDE02', '\uD83D\uDC4F', '\uD83D\uDE0D'];
+const getEntityId = (value) => String(value?._id || value?.id || value || '');
 
 const ChatWindow = ({
   conversation,
@@ -19,11 +21,22 @@ const ChatWindow = ({
   const [isTyping, setIsTyping] = useState(false);
   const [replyTarget, setReplyTarget] = useState(null);
   const [editingTargetId, setEditingTargetId] = useState(null);
+  const messageListRef = useRef(null);
   const messages = useMemo(() => conversation || [], [conversation]);
 
   useEffect(() => {
     setIsTyping(typing);
   }, [typing]);
+
+  useEffect(() => {
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+
+    messageList.scrollTo({
+      top: messageList.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [messages.length, typing]);
 
   const submit = (event) => {
     event.preventDefault();
@@ -55,8 +68,8 @@ const ChatWindow = ({
   }
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-[#dbdbdb] px-6 py-4 dark:border-[#262626]">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b border-[#dbdbdb] px-6 py-4 dark:border-[#262626]">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <img
@@ -106,32 +119,50 @@ const ChatWindow = ({
         </div>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto px-6 py-6">
+      <div ref={messageListRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-6 py-6">
         {messages.map((message) => {
-          const mine = String(message.sender?._id) === String(currentUser?._id);
+          const mine = getEntityId(message.sender) === getEntityId(currentUser);
           const currentReaction = message.reactions?.find(
-            (reaction) => String(reaction.user?._id || reaction.user) === String(currentUser?._id)
+            (reaction) => getEntityId(reaction.user) === getEntityId(currentUser)
           )?.emoji;
+          const replySenderName =
+            message.replyTo?.sender?.username ||
+            (getEntityId(message.replyTo?.sender) === getEntityId(currentUser) ? 'you' : activeUser.username);
 
           return (
-            <div key={message._id} className={`group flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={`flex max-w-[560px] items-end gap-2 ${mine ? 'flex-row-reverse' : 'flex-row'}`}>
-                <div className="max-w-[320px]">
+            <div
+              key={message._id}
+              className={`group flex w-full items-end gap-2 ${mine ? 'justify-end pl-12' : 'justify-start pr-12'}`}
+            >
+              {!mine && (
+                <img
+                  src={activeUser.profilePicture?.url}
+                  alt={activeUser.username}
+                  className="mb-1 h-7 w-7 shrink-0 rounded-full object-cover"
+                />
+              )}
+
+              <div className={`flex max-w-[75%] items-end gap-2 ${mine ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div className={`${mine ? 'items-end' : 'items-start'} flex max-w-full flex-col`}>
                   {message.replyTo && (
-                    <div className="mb-1 rounded-2xl border border-[#dbdbdb] bg-[#fafafa] px-3 py-2 text-xs text-[#8e8e8e] dark:border-[#262626] dark:bg-[#121212]">
-                      Replying to {message.replyTo.sender?.username}: {message.replyTo.text || 'shared message'}
+                    <div className="mb-1 max-w-full rounded-2xl border border-[#dbdbdb] bg-[#fafafa] px-3 py-2 text-xs text-[#8e8e8e] dark:border-[#262626] dark:bg-[#121212]">
+                      Replying to {replySenderName}: {message.replyTo.text || 'shared message'}
                     </div>
                   )}
 
                   <div
-                    className={`rounded-[22px] px-4 py-2.5 text-sm ${
+                    className={`max-w-full break-words rounded-[22px] px-4 py-2.5 text-sm ${
                       mine
                         ? 'bg-[#0095f6] text-white'
                         : 'border border-[#dbdbdb] bg-white text-[#262626] dark:border-[#262626] dark:bg-black dark:text-white'
                     }`}
                   >
                     {message.sharedPost && (
-                      <div className="mb-3 overflow-hidden rounded-2xl border border-white/20 bg-black/10">
+                      <Link
+                        to={`/post/${getEntityId(message.sharedPost)}`}
+                        className="mb-3 block overflow-hidden rounded-2xl border border-white/20 bg-black/10 transition hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#0095f6]"
+                        title="Open shared post"
+                      >
                         <img
                           src={message.sharedPost.media?.[0]?.url}
                           alt={message.sharedPost.caption}
@@ -141,11 +172,13 @@ const ChatWindow = ({
                           <p className="font-semibold">@{message.sharedPost.author?.username}</p>
                           <p className="mt-1 line-clamp-2">{message.sharedPost.caption || 'Shared post'}</p>
                         </div>
-                      </div>
+                      </Link>
                     )}
 
                     {message.isUnsent ? (
-                      <span className="italic text-white/80 dark:text-[#8e8e8e]">You unsent a message</span>
+                      <span className={`italic ${mine ? 'text-white/80' : 'text-[#8e8e8e] dark:text-[#a8a8a8]'}`}>
+                        {mine ? 'You unsent a message' : 'This message was unsent'}
+                      </span>
                     ) : (
                       <span>{message.text || (message.media?.length ? 'Shared media' : 'Shared a post')}</span>
                     )}
@@ -157,7 +190,7 @@ const ChatWindow = ({
                     <div className={`mt-1 flex flex-wrap items-center gap-1 ${mine ? 'justify-end' : 'justify-start'}`}>
                       {message.reactions?.map((reaction) => (
                         <span
-                          key={`${message._id}_${reaction.user?._id || reaction.user}_${reaction.emoji}`}
+                          key={`${message._id}_${getEntityId(reaction.user)}_${reaction.emoji}`}
                           className="rounded-full bg-[#f5f5f5] px-2 py-0.5 text-xs shadow-sm dark:bg-[#121212]"
                         >
                           {reaction.emoji}
@@ -241,10 +274,15 @@ const ChatWindow = ({
         )}
       </div>
 
-      <form onSubmit={submit} className="border-t border-[#dbdbdb] p-4 dark:border-[#262626]">
+      <form onSubmit={submit} className="shrink-0 border-t border-[#dbdbdb] bg-white p-4 dark:border-[#262626] dark:bg-black">
         {(replyTarget || editingTargetId) && (
           <div className="mb-3 rounded-2xl border border-[#dbdbdb] bg-[#fafafa] px-4 py-3 text-sm dark:border-[#262626] dark:bg-[#121212]">
-            {editingTargetId ? `Editing message` : `Replying to ${replyTarget?.sender?.username}`}
+            {editingTargetId
+              ? 'Editing message'
+              : `Replying to ${
+                  replyTarget?.sender?.username ||
+                  (getEntityId(replyTarget?.sender) === getEntityId(currentUser) ? 'you' : activeUser.username)
+                }`}
           </div>
         )}
         <div className="flex items-center gap-3 rounded-full border border-[#dbdbdb] px-4 py-2 dark:border-[#262626]">

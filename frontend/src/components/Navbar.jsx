@@ -24,9 +24,9 @@ const Navbar = () => {
           </Link>
           <Link to="/notifications" className="relative rounded-full p-2">
             <Heart size={22} />
-            {unreadCount > 0 && (
-              <span className="absolute -right-1 -top-1 rounded-full bg-[#ff3040] px-1.5 text-[10px] font-semibold text-white">
-                {unreadCount}
+            {Number(unreadCount) > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#ff3040] px-1.5 text-[10px] font-semibold leading-none text-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </Link>

@@ -331,6 +331,19 @@ export const sharePost = asyncHandler(async (req, res) => {
     ]);
 
     req.app.get('io')?.to(String(recipient._id)).emit('message:new', message);
+    await createNotification(
+      {
+        recipient: recipient._id,
+        actor: req.user._id,
+        type: 'message',
+        message: message._id,
+        post: post._id,
+        title: `${req.user.username} sent you a post`,
+        body: req.body.text || 'Shared a post with you',
+        link: `/messages?user=${req.user._id}`,
+      },
+      req.app.get('io')
+    );
     response.sharedMessage = message;
   }
 

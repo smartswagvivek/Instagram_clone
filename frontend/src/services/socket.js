@@ -1,6 +1,7 @@
 import { io } from 'socket.io-client';
 
 let socket;
+let socketToken;
 
 const normalizeUrl = (url = '') => url.trim().replace(/\/+$/, '');
 const getSocketUrl = () => {
@@ -13,8 +14,15 @@ const getSocketUrl = () => {
 
 export const connectSocket = (token) => {
   if (!token) return null;
+  if (socket && socketToken !== token) {
+    socket.disconnect();
+    socket = null;
+    socketToken = null;
+  }
+
   if (socket?.connected) return socket;
 
+  socketToken = token;
   socket = io(getSocketUrl(), {
     auth: { token },
     withCredentials: true,
@@ -30,5 +38,6 @@ export const disconnectSocket = () => {
   if (socket) {
     socket.disconnect();
     socket = null;
+    socketToken = null;
   }
 };

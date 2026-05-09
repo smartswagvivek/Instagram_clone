@@ -1,6 +1,6 @@
-import { Compass, Home, MessageCircle, PlusSquare, Search, UserCircle2 } from 'lucide-react';
+import { Compass, Heart, Home, MessageCircle, PlusSquare, Search, UserCircle2 } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 
 import { openCreateMenu } from '../redux/slices/uiSlice';
 
@@ -10,11 +10,20 @@ const links = [
   { to: '/explore', icon: Compass, label: 'Explore' },
   { action: 'create', icon: PlusSquare, label: 'Create' },
   { to: '/messages', icon: MessageCircle, label: 'Messages' },
+  { to: '/notifications', icon: Heart, label: 'Notifications' },
   { to: '/profile', icon: UserCircle2, label: 'Profile' },
 ];
 
 const MobileBottomNav = () => {
   const dispatch = useDispatch();
+  const messageUnreadCount = useSelector((state) => state.messages.unreadCount);
+  const notificationUnreadCount = useSelector((state) => state.notifications.unreadCount);
+  const getBadgeCount = (to) => {
+    if (to === '/messages') return messageUnreadCount;
+    if (to === '/notifications') return notificationUnreadCount;
+    return 0;
+  };
+  const formatBadgeCount = (count) => (count > 99 ? '99+' : count);
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dbdbdb] bg-white/95 backdrop-blur dark:border-[#262626] dark:bg-black/95 lg:hidden">
@@ -41,7 +50,16 @@ const MobileBottomNav = () => {
               }
               aria-label={label}
             >
-              {({ isActive }) => <Icon size={24} strokeWidth={isActive ? 2.7 : 2.1} />}
+              {({ isActive }) => (
+                <span className="relative inline-flex">
+                  <Icon size={24} strokeWidth={isActive ? 2.7 : 2.1} />
+                  {Number(getBadgeCount(to)) > 0 && (
+                    <span className="absolute -right-2 -top-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#ff3040] px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-black">
+                      <span>{formatBadgeCount(Number(getBadgeCount(to)))}</span>
+                    </span>
+                  )}
+                </span>
+              )}
             </NavLink>
           )
         )}

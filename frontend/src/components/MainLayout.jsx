@@ -1,7 +1,10 @@
 import { Moon, Sun } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
+import { fetchConversations } from '../redux/slices/messagesSlice';
+import { fetchUnreadCount } from '../redux/slices/notificationSlice';
 import { toggleTheme } from '../redux/slices/uiSlice';
 import CreateMenuModal from './CreateMenuModal';
 import GlobalCallLayer from './calls/GlobalCallLayer';
@@ -12,9 +15,15 @@ import ToastViewport from './shared/ToastViewport';
 
 const MainLayout = () => {
   const dispatch = useDispatch();
+  const location = useLocation();
   const { user } = useSelector((state) => state.auth);
   const { unreadCount } = useSelector((state) => state.notifications);
   const { theme } = useSelector((state) => state.ui);
+
+  useEffect(() => {
+    dispatch(fetchUnreadCount());
+    dispatch(fetchConversations());
+  }, [dispatch, location.pathname]);
 
   return (
     <div className="flex min-h-screen flex-col bg-white text-[#262626] dark:bg-black dark:text-[#f5f5f5]">
@@ -59,9 +68,11 @@ const MainLayout = () => {
             <div className="rounded-2xl border border-[#efefef] p-4 dark:border-[#1f1f1f]">
               <div className="flex items-center justify-between text-sm">
                 <p className="font-semibold">Notifications</p>
-                <span className="rounded-full bg-[#ff3040] px-2 py-0.5 text-xs font-semibold text-white">
-                  {unreadCount}
-                </span>
+                {unreadCount > 0 && (
+                  <span className="rounded-full bg-[#ff3040] px-2 py-0.5 text-xs font-semibold text-white">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
               </div>
               <p className="mt-2 text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
                 {user?.isPrivate ? 'Private account' : 'Public account'} with {user?.following?.length || 0}{' '}

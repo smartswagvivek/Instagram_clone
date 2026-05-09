@@ -1,6 +1,8 @@
 import { Pin, PlusSquare, Search, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+const getEntityId = (value) => String(value?._id || value?.id || value || '');
+
 const ConversationList = ({
   conversations,
   activeUserId,
@@ -31,8 +33,8 @@ const ConversationList = ({
 
   return (
     <>
-      <div className="h-full border-r border-[#dbdbdb] dark:border-[#262626]">
-        <div className="border-b border-[#dbdbdb] px-6 py-5 dark:border-[#262626]">
+      <div className="flex h-full min-h-0 flex-col border-r border-[#dbdbdb] dark:border-[#262626]">
+        <div className="shrink-0 border-b border-[#dbdbdb] px-6 py-5 dark:border-[#262626]">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold">Messages</h2>
@@ -62,50 +64,54 @@ const ConversationList = ({
           </div>
         </div>
 
-        <div className="max-h-[calc(100vh-145px)] overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {conversations.length === 0 ? (
             <div className="px-6 py-6 text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
               No conversations yet. Tap the `+` button to start messaging someone you follow.
             </div>
           ) : (
-            conversations.map((conversation) => (
-              <button
-                key={conversation.user?._id}
-                type="button"
-                onClick={() => onSelect(conversation.user?._id)}
-                className={`flex w-full items-center gap-3 px-6 py-3 text-left ${
-                  activeUserId === conversation.user?._id
-                    ? 'bg-[#fafafa] dark:bg-[#121212]'
-                    : 'hover:bg-[#fafafa] dark:hover:bg-[#121212]'
-                }`}
-              >
-                <img
-                  src={conversation.user?.profilePicture?.url}
-                  alt={conversation.user?.username}
-                  className="h-14 w-14 rounded-full object-cover"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="truncate text-sm font-semibold">
-                      {conversation.user?.username}
+            conversations.map((conversation) => {
+              const conversationUserId = getEntityId(conversation.user);
+
+              return (
+                <button
+                  key={conversationUserId}
+                  type="button"
+                  onClick={() => onSelect(conversationUserId)}
+                  className={`flex w-full items-center gap-3 px-6 py-3 text-left ${
+                    getEntityId(activeUserId) === conversationUserId
+                      ? 'bg-[#fafafa] dark:bg-[#121212]'
+                      : 'hover:bg-[#fafafa] dark:hover:bg-[#121212]'
+                  }`}
+                >
+                  <img
+                    src={conversation.user?.profilePicture?.url}
+                    alt={conversation.user?.username}
+                    className="h-14 w-14 rounded-full object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold">
+                        {conversation.user?.username}
+                      </p>
+                      {conversation.pinned && <Pin size={12} className="text-[#0095f6]" fill="currentColor" />}
+                    </div>
+                    <p className="truncate text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
+                      {conversation.lastMessage?.isUnsent
+                        ? 'Message unsent'
+                        : conversation.lastMessage?.sharedPost
+                          ? 'Shared a post'
+                          : conversation.lastMessage?.text || 'Sent a media message'}
                     </p>
-                    {conversation.pinned && <Pin size={12} className="text-[#0095f6]" fill="currentColor" />}
                   </div>
-                  <p className="truncate text-sm text-[#8e8e8e] dark:text-[#a8a8a8]">
-                    {conversation.lastMessage?.isUnsent
-                      ? 'Message unsent'
-                      : conversation.lastMessage?.sharedPost
-                        ? 'Shared a post'
-                        : conversation.lastMessage?.text || 'Sent a media message'}
-                  </p>
-                </div>
-                {conversation.unreadCount > 0 && (
-                  <span className="rounded-full bg-[#ff3040] px-2 py-0.5 text-xs font-semibold text-white">
-                    {conversation.unreadCount}
-                  </span>
-                )}
-              </button>
-            ))
+                  {conversation.unreadCount > 0 && (
+                    <span className="rounded-full bg-[#ff3040] px-2 py-0.5 text-xs font-semibold text-white">
+                      {conversation.unreadCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })
           )}
         </div>
       </div>

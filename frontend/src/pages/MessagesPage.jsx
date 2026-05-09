@@ -7,11 +7,9 @@ import api from '../services/api';
 import ChatWindow from '../components/messages/ChatWindow';
 import ConversationList from '../components/messages/ConversationList';
 import {
-  appendIncomingMessage,
   editMessage,
   fetchConversation,
   fetchConversations,
-  mergeMessageUpdate,
   reactToMessage,
   resetMessagesState,
   sendMessage,
@@ -24,6 +22,7 @@ import { connectSocket, getSocket } from '../services/socket';
 
 const EMPTY_CALL = { status: 'idle', callId: null, callType: null, peerUser: null, peerId: null, isCaller: false };
 const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const getEntityId = (value) => String(value?._id || value?.id || value || '');
 
 const MessagesPage = () => {
   const dispatch = useDispatch();
@@ -133,9 +132,10 @@ const MessagesPage = () => {
   }, [authUser?.following]);
 
   useEffect(() => {
-    if (!activeUserId && conversations[0]?.user?._id) {
-      dispatch(setActiveUser(conversations[0].user._id));
-      dispatch(fetchConversation(conversations[0].user._id));
+    const firstConversationUserId = getEntityId(conversations[0]?.user);
+    if (!activeUserId && firstConversationUserId) {
+      dispatch(setActiveUser(firstConversationUserId));
+      dispatch(fetchConversation(firstConversationUserId));
     }
   }, [activeUserId, conversations, dispatch]);
 
@@ -151,8 +151,6 @@ const MessagesPage = () => {
     const socket = getSocket() || connectSocket(accessToken);
     if (!socket) return;
 
-    const onMessage = (message) => dispatch(appendIncomingMessage(message));
-    const onMessageUpdated = (message) => dispatch(mergeMessageUpdate(message));
     const onTyping = ({ fromUserId }) => dispatch(setTypingState({ userId: fromUserId, value: true }));
     const onStopTyping = ({ fromUserId }) =>
       dispatch(setTypingState({ userId: fromUserId, value: false }));
@@ -204,8 +202,6 @@ const MessagesPage = () => {
     };
     const onCallSignal = (payload) => handleCallSignal(payload);
 
-    socket.on('message:new', onMessage);
-    socket.on('message:updated', onMessageUpdated);
     socket.on('chat:typing', onTyping);
     socket.on('chat:stop-typing', onStopTyping);
     socket.on('call:incoming', onIncomingCall);
@@ -215,8 +211,6 @@ const MessagesPage = () => {
     socket.on('call:signal', onCallSignal);
 
     return () => {
-      socket.off('message:new', onMessage);
-      socket.off('message:updated', onMessageUpdated);
       socket.off('chat:typing', onTyping);
       socket.off('chat:stop-typing', onStopTyping);
       socket.off('call:incoming', onIncomingCall);
@@ -227,7 +221,7 @@ const MessagesPage = () => {
     };
   }, [accessToken, dispatch]);
 
-  const activeConversation = conversations.find((item) => item.user?._id === activeUserId);
+  const activeConversation = conversations.find((item) => getEntityId(item.user) === getEntityId(activeUserId));
   const [activeUserInfo, setActiveUserInfo] = useState(null);
 
   const activeUser = activeConversation?.user || activeUserInfo;
@@ -239,7 +233,7 @@ const MessagesPage = () => {
       return;
     }
 
-    if (activeConversation?.user?._id === activeUserId) {
+    if (getEntityId(activeConversation?.user) === getEntityId(activeUserId)) {
       setActiveUserInfo(null);
       return;
     }
@@ -467,8 +461,8 @@ const MessagesPage = () => {
 
   return (
     <div className="mx-auto max-w-[935px] px-4 py-8">
-      <div className="ig-surface h-[calc(100vh-96px)] overflow-hidden rounded-lg">
-        <div className="grid h-full grid-cols-[350px_1fr]">
+      <div className="ig-surface h-[calc(100vh-96px)] min-h-0 overflow-hidden rounded-lg">
+        <div className="grid h-full min-h-0 grid-cols-[350px_minmax(0,1fr)]">
           <ConversationList
             conversations={conversations}
             activeUserId={activeUserId}

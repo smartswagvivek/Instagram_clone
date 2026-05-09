@@ -50,8 +50,13 @@ const notificationSlice = createSlice({
   initialState,
   reducers: {
     pushNotification(state, action) {
+      if (!action.payload?._id) return;
+      if (state.items.some((item) => item._id === action.payload._id)) return;
+
       state.items = [action.payload, ...state.items];
-      state.unreadCount += 1;
+      if (!action.payload.isRead) {
+        state.unreadCount += 1;
+      }
     },
     removeNotification(state, action) {
       const removed = state.items.find((item) => item._id === action.payload);

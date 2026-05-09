@@ -12,13 +12,21 @@ import DiscoveryPage from './pages/DiscoveryPage';
 import LoginPage from './pages/LoginPage';
 import MessagesPage from './pages/MessagesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import PostPage from './pages/PostPage';
 import ProfilePage from './pages/ProfilePage';
 import ReelsPage from './pages/ReelsPage';
 import SavedPage from './pages/SavedPage';
 import SettingsPage from './pages/SettingsPage';
 import SignupPage from './pages/SignupPage';
 import { loadCurrentUser } from './redux/slices/authSlice';
-import { pushNotification } from './redux/slices/notificationSlice';
+import {
+  appendIncomingMessage,
+  fetchConversation,
+  fetchConversations,
+  mergeMessageUpdate,
+  recordIncomingMessagePreview,
+} from './redux/slices/messagesSlice';
+import { fetchUnreadCount, pushNotification } from './redux/slices/notificationSlice';
 import { showToast } from './redux/slices/uiSlice';
 import { selectTheme } from './redux/slices/uiSlice';
 import { connectSocket, getSocket } from './services/socket';
@@ -30,15 +38,20 @@ const GuestOnly = () => {
   return isAuthenticated ? <Navigate to="/feed" replace /> : <Outlet />;
 };
 
+const getEntityId = (value) => String(value?._id || value?.id || value || '');
+
 const App = () => {
   const dispatch = useDispatch();
   const theme = useSelector(selectTheme);
   const token = useSelector((state) => state.auth.accessToken);
+  const activeMessageUserId = useSelector((state) => state.messages.activeUserId);
 
   useEffect(() => {
     if (token) {
       connectSocket(token);
       dispatch(loadCurrentUser());
+      dispatch(fetchUnreadCount());
+      dispatch(fetchConversations());
     }
   }, [dispatch, token]);
 
@@ -48,27 +61,76 @@ const App = () => {
     const socket = getSocket() || connectSocket(token);
     if (!socket) return undefined;
 
-    const handlers = ['like', 'comment', 'follow', 'follow_request'].map(
-      (eventName) => {
-        const handler = (payload) => {
-          dispatch(pushNotification(payload));
-          dispatch(
-            showToast({
-              tone: 'success',
-              message: payload?.title || payload?.body || 'New activity on your account.',
-            })
-          );
-        };
+    const refreshBadges = () => {
+      dispatch(fetchUnreadCount());
+      dispatch(fetchConversations());
+    };
 
-        socket.on(eventName, handler);
-        return { eventName, handler };
+    const onNotification = (payload) => {
+      dispatch(pushNotification(payload));
+      dispatch(fetchUnreadCount());
+      dispatch(
+        showToast({
+          tone: 'success',
+          message: payload?.title || payload?.body || 'New activity on your account.',
+        })
+      );
+    };
+
+    const onMessage = (message) => {
+      const senderId = getEntityId(message?.sender);
+      const isViewingSenderChat =
+        senderId &&
+        getEntityId(activeMessageUserId) === senderId &&
+        window.location.pathname.startsWith('/messages');
+
+      dispatch(appendIncomingMessage(message));
+
+      if (isViewingSenderChat) {
+        dispatch(fetchConversation(senderId)).then(() => dispatch(fetchConversations()));
+      } else {
+        dispatch(recordIncomingMessagePreview(message));
+        dispatch(fetchConversations());
       }
-    );
+
+      dispatch(fetchUnreadCount());
+    };
+
+    const onMessageUpdated = (message) => {
+      dispatch(mergeMessageUpdate(message));
+      dispatch(fetchConversations());
+    };
+
+    const onSocketReady = () => refreshBadges();
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshBadges();
+      }
+    };
+
+    const onWindowFocus = () => refreshBadges();
+
+    socket.on('notification:new', onNotification);
+    socket.on('message:new', onMessage);
+    socket.on('message:updated', onMessageUpdated);
+    socket.on('connect', onSocketReady);
+    socket.io.on('reconnect', onSocketReady);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onWindowFocus);
+    const refreshInterval = window.setInterval(refreshBadges, 15000);
 
     return () => {
-      handlers.forEach(({ eventName, handler }) => socket.off(eventName, handler));
+      socket.off('notification:new', onNotification);
+      socket.off('message:new', onMessage);
+      socket.off('message:updated', onMessageUpdated);
+      socket.off('connect', onSocketReady);
+      socket.io.off('reconnect', onSocketReady);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onWindowFocus);
+      window.clearInterval(refreshInterval);
     };
-  }, [dispatch, token]);
+  }, [activeMessageUserId, dispatch, token]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -102,6 +164,7 @@ const App = () => {
             <Route path="/create" element={<CreatePostPage />} />
             <Route path="/messages" element={<MessagesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
+            <Route path="/post/:postId" element={<PostPage />} />
             <Route path="/saved" element={<SavedPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/profile" element={<ProfilePage />} />
