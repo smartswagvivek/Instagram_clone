@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 const connectedUsers = new Map();
+const activeCalls = new Map();
 
 const addConnectedSocket = (userId, socketId) => {
   const sockets = connectedUsers.get(userId) || new Set();
@@ -84,9 +85,21 @@ const setupSocketIO = (io) => {
           profilePicture: socket.user.profilePicture,
         },
       });
+
+      activeCalls.set(callId, {
+        callerId: socket.userId,
+        recipientId: targetUserId,
+        status: 'ringing',
+      });
     });
 
     socket.on('call:accept', ({ recipientId, callId }) => {
+      activeCalls.set(callId, {
+        callerId: String(recipientId),
+        recipientId: socket.userId,
+        status: 'accepted',
+      });
+
       io.to(String(recipientId)).emit('call:accepted', {
         callId,
         fromUserId: socket.userId,
@@ -94,6 +107,12 @@ const setupSocketIO = (io) => {
     });
 
     socket.on('call:decline', ({ recipientId, callId }) => {
+      const activeCall = activeCalls.get(callId);
+      if (activeCall?.status === 'accepted') {
+        return;
+      }
+
+      activeCalls.delete(callId);
       io.to(String(recipientId)).emit('call:declined', {
         callId,
         fromUserId: socket.userId,
@@ -101,6 +120,7 @@ const setupSocketIO = (io) => {
     });
 
     socket.on('call:end', ({ recipientId, callId }) => {
+      activeCalls.delete(callId);
       io.to(String(recipientId)).emit('call:ended', {
         callId,
         fromUserId: socket.userId,

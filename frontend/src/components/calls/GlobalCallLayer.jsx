@@ -54,11 +54,17 @@ const GlobalCallLayer = () => {
   }, [callState]);
 
   useEffect(() => {
-    if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play?.().catch(() => {});
+    }
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.play?.().catch(() => {});
+    }
     if (remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = remoteStream;
       remoteAudioRef.current.play?.().catch(() => {});
@@ -123,7 +129,20 @@ const GlobalCallLayer = () => {
     });
     peerConnectionRef.current = peerConnection;
 
-    stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+    const audioTrack = stream.getAudioTracks()[0];
+    const videoTrack = stream.getVideoTracks()[0];
+    const audioTransceiver = peerConnection.addTransceiver('audio', { direction: 'sendrecv' });
+
+    if (audioTrack) {
+      await audioTransceiver.sender.replaceTrack(audioTrack);
+    }
+
+    if (currentCall.callType === 'video') {
+      const videoTransceiver = peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+      if (videoTrack) {
+        await videoTransceiver.sender.replaceTrack(videoTrack);
+      }
+    }
 
     const clearDisconnectTimer = () => {
       if (disconnectTimerRef.current) {
@@ -338,7 +357,7 @@ const GlobalCallLayer = () => {
       <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-[#121212] text-white shadow-2xl">
         <div className="relative flex min-h-[420px] items-center justify-center bg-black">
           {callState.callType === 'video' && remoteStream ? (
-            <video ref={remoteVideoRef} autoPlay playsInline className="h-full max-h-[70vh] w-full object-cover" />
+            <video ref={remoteVideoRef} autoPlay muted playsInline className="h-full max-h-[70vh] w-full object-cover" />
           ) : (
             <div className="flex flex-col items-center text-center">
               <img
@@ -367,7 +386,7 @@ const GlobalCallLayer = () => {
             />
           )}
 
-          <audio ref={remoteAudioRef} autoPlay />
+          <audio ref={remoteAudioRef} autoPlay playsInline />
         </div>
 
         <div className="flex flex-col gap-4 px-5 py-5">
