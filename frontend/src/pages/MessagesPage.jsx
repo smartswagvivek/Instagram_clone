@@ -21,7 +21,21 @@ import { showToast } from '../redux/slices/uiSlice';
 import { connectSocket, getSocket } from '../services/socket';
 
 const EMPTY_CALL = { status: 'idle', callId: null, callType: null, peerUser: null, peerId: null, isCaller: false };
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const CALL_RECONNECT_GRACE_MS = 10000;
+const getIceServers = () => {
+  const servers = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+  const turnUrls = import.meta.env.VITE_TURN_URLS || import.meta.env.VITE_TURN_URL;
+
+  if (turnUrls) {
+    servers.push({
+      urls: turnUrls.split(',').map((url) => url.trim()).filter(Boolean),
+      username: import.meta.env.VITE_TURN_USERNAME,
+      credential: import.meta.env.VITE_TURN_CREDENTIAL,
+    });
+  }
+
+  return servers;
+};
 const getEntityId = (value) => String(value?._id || value?.id || value || '');
 const waitForSocketConnection = (socket) =>
   new Promise((resolve, reject) => {
@@ -55,6 +69,7 @@ const MessagesPage = () => {
   const callRef = useRef(EMPTY_CALL);
   const peerConnectionRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);
+  const disconnectTimerRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
@@ -317,8 +332,12 @@ const MessagesPage = () => {
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video',
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: callType === 'video' ? { facingMode: 'user' } : false,
     });
     localStreamRef.current = stream;
     setLocalStream(stream);
@@ -332,10 +351,48 @@ const MessagesPage = () => {
 
     const currentCall = callRef.current;
     const stream = localStreamRef.current || (await getCallMedia(currentCall.callType || 'audio'));
-    const peerConnection = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const peerConnection = new RTCPeerConnection({
+      iceServers: getIceServers(),
+      iceCandidatePoolSize: 10,
+    });
     peerConnectionRef.current = peerConnection;
 
     stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
+
+    const clearDisconnectTimer = () => {
+      if (disconnectTimerRef.current) {
+        window.clearTimeout(disconnectTimerRef.current);
+        disconnectTimerRef.current = null;
+      }
+    };
+
+    const handleConnectionStateChange = () => {
+      const state = peerConnection.connectionState || peerConnection.iceConnectionState;
+
+      if (['connected', 'completed'].includes(state)) {
+        clearDisconnectTimer();
+        setCallState((current) =>
+          current.callId === callId && current.status !== 'active' ? { ...current, status: 'active' } : current
+        );
+        return;
+      }
+
+      if (state === 'disconnected') {
+        if (disconnectTimerRef.current) return;
+        disconnectTimerRef.current = window.setTimeout(() => {
+          disconnectTimerRef.current = null;
+          if (peerConnectionRef.current === peerConnection && peerConnection.connectionState === 'disconnected') {
+            endCall(false);
+          }
+        }, CALL_RECONNECT_GRACE_MS);
+        return;
+      }
+
+      if (['closed', 'failed'].includes(state)) {
+        clearDisconnectTimer();
+        endCall(false);
+      }
+    };
 
     peerConnection.ontrack = (event) => {
       const [streamFromPeer] = event.streams;
@@ -346,7 +403,7 @@ const MessagesPage = () => {
       }
 
       remoteStreamRef.current = nextRemoteStream;
-      setRemoteStream(nextRemoteStream);
+      setRemoteStream(new MediaStream(nextRemoteStream.getTracks()));
       setCallState((current) =>
         current.callId === callId ? { ...current, status: 'active' } : current
       );
@@ -361,11 +418,8 @@ const MessagesPage = () => {
       });
     };
 
-    peerConnection.onconnectionstatechange = () => {
-      if (['closed', 'disconnected', 'failed'].includes(peerConnection.connectionState)) {
-        endCall(false);
-      }
-    };
+    peerConnection.onconnectionstatechange = handleConnectionStateChange;
+    peerConnection.oniceconnectionstatechange = handleConnectionStateChange;
 
     return peerConnection;
   };
@@ -375,7 +429,13 @@ const MessagesPage = () => {
     pendingIceCandidatesRef.current = [];
 
     await Promise.all(
-      pendingCandidates.map((candidate) => peerConnection.addIceCandidate(new RTCIceCandidate(candidate)))
+      pendingCandidates.map(async (candidate) => {
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (_error) {
+          // Ignore stale ICE candidates so one bad candidate does not drop the call.
+        }
+      })
     );
   };
 
@@ -449,6 +509,10 @@ const MessagesPage = () => {
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     pendingIceCandidatesRef.current = [];
+    if (disconnectTimerRef.current) {
+      window.clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
     remoteStreamRef.current = null;
@@ -491,7 +555,11 @@ const MessagesPage = () => {
           return;
         }
 
-        await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        } catch (_error) {
+          // Ignore stale ICE candidates so the active media connection can continue.
+        }
       }
     } catch (error) {
       endCall(true);
