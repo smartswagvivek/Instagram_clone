@@ -31,6 +31,8 @@ const GlobalCallLayer = () => {
   const [remoteStream, setRemoteStream] = useState(null);
   const [audioMuted, setAudioMuted] = useState(false);
   const [videoMuted, setVideoMuted] = useState(false);
+  const [callNotice, setCallNotice] = useState('');
+  const [remoteAudioBlocked, setRemoteAudioBlocked] = useState(false);
   const isMessagesPage = location.pathname === '/messages';
 
   useEffect(() => {
@@ -42,8 +44,20 @@ const GlobalCallLayer = () => {
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = remoteStream;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = remoteStream;
+      remoteVideoRef.current.muted = true;
+      remoteVideoRef.current.play?.().catch(() => {});
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = 1;
+      remoteAudioRef.current
+        .play?.()
+        .then(() => setRemoteAudioBlocked(false))
+        .catch(() => setRemoteAudioBlocked(Boolean(remoteStream?.getAudioTracks().length)));
+    }
   }, [remoteStream]);
 
   const getCallMedia = async (callType) => {
@@ -51,10 +65,35 @@ const GlobalCallLayer = () => {
       throw new Error('Calls are not supported in this browser.');
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: callType === 'video',
+    const audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+      video: false,
     });
+    const tracks = [...audioStream.getAudioTracks()];
+
+    if (callType === 'video') {
+      try {
+        const videoStream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user',
+          },
+        });
+        tracks.push(...videoStream.getVideoTracks());
+        setCallNotice('');
+      } catch (error) {
+        audioStream.getTracks().forEach((track) => track.stop());
+        throw new Error(error.name === 'NotAllowedError' ? 'Camera permission denied.' : 'Camera is not available.');
+      }
+    }
+
+    const stream = new MediaStream(tracks);
     localStreamRef.current = stream;
     setLocalStream(stream);
     setAudioMuted(false);
@@ -82,6 +121,8 @@ const GlobalCallLayer = () => {
     setRemoteStream(null);
     setAudioMuted(false);
     setVideoMuted(false);
+    setCallNotice('');
+    setRemoteAudioBlocked(false);
   };
 
   const ensurePeerConnection = async (peerId, callId) => {
@@ -253,6 +294,19 @@ const GlobalCallLayer = () => {
     setVideoMuted((value) => !value);
   };
 
+  const enableRemoteAudio = () => {
+    if (!remoteAudioRef.current) return;
+    remoteAudioRef.current.muted = false;
+    remoteAudioRef.current.volume = 1;
+    remoteAudioRef.current
+      .play?.()
+      .then(() => {
+        setRemoteAudioBlocked(false);
+        setCallNotice('');
+      })
+      .catch(() => setCallNotice('Tap again after allowing sound in your browser.'));
+  };
+
   if (callState.status === 'idle' || isMessagesPage) return null;
 
   return (
@@ -298,6 +352,16 @@ const GlobalCallLayer = () => {
             <p className="mt-1 text-xs text-white/50">
               {callState.callType === 'video' ? 'Video call' : 'Audio call'}
             </p>
+            {callNotice && <p className="mt-2 text-xs text-amber-300">{callNotice}</p>}
+            {remoteAudioBlocked && (
+              <button
+                type="button"
+                onClick={enableRemoteAudio}
+                className="mt-3 rounded-full bg-white px-4 py-2 text-xs font-semibold text-black"
+              >
+                Enable sound
+              </button>
+            )}
           </div>
 
           {callState.status === 'incoming' ? (
