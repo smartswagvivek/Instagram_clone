@@ -23,6 +23,7 @@ const GlobalCallLayer = () => {
   const peerConnectionRef = useRef(null);
   const pendingIceCandidatesRef = useRef([]);
   const localStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const remoteAudioRef = useRef(null);
@@ -43,7 +44,10 @@ const GlobalCallLayer = () => {
 
   useEffect(() => {
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = remoteStream;
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play?.().catch(() => {});
+    }
   }, [remoteStream]);
 
   const getCallMedia = async (callType) => {
@@ -76,6 +80,7 @@ const GlobalCallLayer = () => {
     pendingIceCandidatesRef.current = [];
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    remoteStreamRef.current = null;
     callRef.current = EMPTY_CALL;
     setCallState(EMPTY_CALL);
     setLocalStream(null);
@@ -96,12 +101,17 @@ const GlobalCallLayer = () => {
 
     peerConnection.ontrack = (event) => {
       const [streamFromPeer] = event.streams;
-      if (streamFromPeer) {
-        setRemoteStream(streamFromPeer);
-        setCallState((current) =>
-          current.callId === callId ? { ...current, status: 'active' } : current
-        );
+      const nextRemoteStream = streamFromPeer || remoteStreamRef.current || new MediaStream();
+
+      if (!streamFromPeer && !nextRemoteStream.getTracks().some((track) => track.id === event.track.id)) {
+        nextRemoteStream.addTrack(event.track);
       }
+
+      remoteStreamRef.current = nextRemoteStream;
+      setRemoteStream(nextRemoteStream);
+      setCallState((current) =>
+        current.callId === callId ? { ...current, status: 'active' } : current
+      );
     };
 
     peerConnection.onicecandidate = (event) => {
